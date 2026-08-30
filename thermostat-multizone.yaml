@@ -1,0 +1,5508 @@
+# ============================================================
+# THERMOSTAT MAISON — MULTI-ZONES
+# Waveshare ESP32-S3 Knob Touch LCD 1.8 B
+# ESPHome 2026.8.1
+#
+# 8 zones, navigation par swipe gauche/droite (boucle)
+# ============================================================
+
+esphome:
+  name: thermostat-maison
+  friendly_name: Thermostat Maison Multizone
+
+
+# ============================================================
+# ESP32-S3
+# ============================================================
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  flash_size: 16MB
+
+  framework:
+    type: esp-idf
+
+
+# ============================================================
+# PSRAM
+# ============================================================
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+
+# ============================================================
+# EXTERNAL COMPONENTS
+# ============================================================
+
+external_components:
+
+  - source:
+      type: git
+      url: https://github.com/KrX3D/WaveShare-Knob-Esp32S3
+      ref: main
+    refresh: 1d
+
+
+# ============================================================
+# LOGGER
+# ============================================================
+
+logger:
+  level: DEBUG
+  baud_rate: 0
+
+
+# ============================================================
+# API
+# ============================================================
+
+api:
+
+
+# ============================================================
+# OTA
+# ============================================================
+
+ota:
+  - platform: esphome
+
+
+# ============================================================
+# WIFI
+# ============================================================
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+
+# ============================================================
+# SPI — LCD
+# ============================================================
+
+spi:
+  id: display_qspi
+  type: quad
+
+  clk_pin: GPIO13
+
+  data_pins:
+    - GPIO15
+    - GPIO16
+    - GPIO17
+    - GPIO18
+
+
+# ============================================================
+# I2C — TOUCH
+# ============================================================
+
+i2c:
+  id: ic_bus
+
+  sda: GPIO11
+  scl: GPIO12
+
+  scan: true
+
+# ============================================================
+# GLOBALS — GÉNÉRAUX (partagés entre zones)
+# ============================================================
+
+globals:
+
+  # Index de la zone actuellement affichée (0..7)
+  - id: current_zone
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: ecran_veille
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+  - id: ignore_touch_reveil
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+
+  # ---- Zone 0 : Maison ----
+  - id: consigne_locale_maison
+    type: float
+    restore_value: no
+    initial_value: '20.0'
+
+  - id: derniere_rotation_maison
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: mode_local_maison
+    type: std::string
+    restore_value: no
+    initial_value: '"off"'
+
+  # ---- Zone 1 : Séjour ----
+  - id: consigne_locale_sejour
+    type: float
+    restore_value: no
+    initial_value: '20.0'
+
+  - id: derniere_rotation_sejour
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: mode_local_sejour
+    type: std::string
+    restore_value: no
+    initial_value: '"off"'
+
+  # ---- Zone 2 : Cuisine ----
+  - id: consigne_locale_cuisine
+    type: float
+    restore_value: no
+    initial_value: '20.0'
+
+  - id: derniere_rotation_cuisine
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: mode_local_cuisine
+    type: std::string
+    restore_value: no
+    initial_value: '"off"'
+
+  # ---- Zone 3 : Studio ----
+  - id: consigne_locale_studio
+    type: float
+    restore_value: no
+    initial_value: '20.0'
+
+  - id: derniere_rotation_studio
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: mode_local_studio
+    type: std::string
+    restore_value: no
+    initial_value: '"off"'
+
+  # ---- Zone 4 : Salle de Bain ----
+  - id: consigne_locale_sdb
+    type: float
+    restore_value: no
+    initial_value: '20.0'
+
+  - id: derniere_rotation_sdb
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: mode_local_sdb
+    type: std::string
+    restore_value: no
+    initial_value: '"off"'
+
+  # ---- Zone 5 : Enfants ----
+  - id: consigne_locale_enfants
+    type: float
+    restore_value: no
+    initial_value: '20.0'
+
+  - id: derniere_rotation_enfants
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: mode_local_enfants
+    type: std::string
+    restore_value: no
+    initial_value: '"off"'
+
+  # ---- Zone 6 : Clémence ----
+  - id: consigne_locale_clemence
+    type: float
+    restore_value: no
+    initial_value: '20.0'
+
+  - id: derniere_rotation_clemence
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: mode_local_clemence
+    type: std::string
+    restore_value: no
+    initial_value: '"off"'
+
+  # ---- Zone 7 : Parents ----
+  - id: consigne_locale_parents
+    type: float
+    restore_value: no
+    initial_value: '20.0'
+
+  - id: derniere_rotation_parents
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: mode_local_parents
+    type: std::string
+    restore_value: no
+    initial_value: '"off"'
+
+
+# ============================================================
+# DEEP SLEEP
+# Réveil par le tactile CST816
+# ============================================================
+
+deep_sleep:
+
+  id: thermostat_sleep
+
+  wakeup_pin:
+    number: GPIO9
+    mode: INPUT_PULLUP
+    inverted: true
+    allow_other_uses: true
+
+  wakeup_pin_mode: KEEP_AWAKE
+
+
+switch:
+
+  - platform: template
+
+    name: "Veille profonde"
+
+    id: deep_sleep_switch
+
+    entity_category: config
+
+    optimistic: true
+
+    turn_on_action:
+
+      - deep_sleep.enter:
+
+          id: thermostat_sleep
+
+# ============================================================
+# DISPLAY
+# ============================================================
+
+display:
+
+  - platform: mipi_spi
+
+    id: main_display
+
+    model: JC3636W518V2
+
+    data_rate: 80MHz
+
+    color_order: RGB
+
+    rotation: 0
+
+    invert_colors: true
+
+    auto_clear_enabled: false
+
+    update_interval: never
+
+    dimensions:
+      width: 360
+      height: 360
+
+    cs_pin: GPIO14
+
+    reset_pin: GPIO21
+
+
+# ============================================================
+# TOUCHSCREEN
+# ============================================================
+
+touchscreen:
+
+  - platform: cst816
+
+    id: my_touchscreen
+
+    display: main_display
+
+    interrupt_pin:
+      number: GPIO9
+      allow_other_uses: true
+
+    reset_pin: GPIO10
+
+    on_touch:
+
+      then:
+
+        - if:
+
+            condition:
+
+              lambda: 'return id(ecran_veille);'
+
+            then:
+
+              - lambda: |-
+
+                  id(ignore_touch_reveil) = true;
+
+              - light.turn_on:
+
+                  id: back_light
+
+              - delay: 300ms
+
+              - lambda: |-
+
+                  id(ignore_touch_reveil) = false;
+
+
+# ============================================================
+# BACKLIGHT
+# ============================================================
+
+output:
+
+  - platform: ledc
+
+    id: backlight_pwm
+
+    pin: GPIO47
+
+    frequency: 20000 Hz
+
+
+light:
+
+  - platform: monochromatic
+
+    id: back_light
+
+    name: "Rétroéclairage"
+
+    output: backlight_pwm
+
+    restore_mode: ALWAYS_ON
+
+    default_transition_length: 0s
+
+    on_turn_off:
+
+      - lambda: |-
+
+          id(ecran_veille) = true;
+
+    on_turn_on:
+
+      - lambda: |-
+
+          id(ecran_veille) = false;
+
+
+# ============================================================
+# FONTS
+# ============================================================
+
+font:
+
+  - file: "gfonts://Roboto"
+    id: font_target
+    size: 58
+    bpp: 4
+
+  - file: "gfonts://Roboto"
+    id: font_temperature
+    size: 23
+    bpp: 4
+
+  - file: "gfonts://Roboto"
+    id: font_zonename
+    size: 35
+    bpp: 4
+
+  - file: "https://github.com/Templarian/MaterialDesign-Webfont/raw/v7.4.47/fonts/materialdesignicons-webfont.ttf"
+    id: font_icon
+    size: 38
+    bpp: 4
+    glyphs:
+      - "\U000F0425"   # power
+      - "\U000F0717"   # snowflake
+      - "\U000F0238"   # fire
+
+
+# ============================================================
+# SENSORS — BATTERIE + PAR ZONE
+# ============================================================
+
+sensor:
+
+  # =========================================
+  # BATTERIE
+  # =========================================
+
+  - platform: adc
+    pin: GPIO1
+    name: "Batterie - Tension"
+    id: batterie_tension
+    attenuation: 12db
+    update_interval: 30s
+    unit_of_measurement: "V"
+    device_class: voltage
+    state_class: measurement
+    accuracy_decimals: 2
+    filters:
+      - multiply: 2.0
+
+  - platform: template
+    name: "Batterie"
+    id: batterie_pourcentage
+    unit_of_measurement: "%"
+    device_class: battery
+    state_class: measurement
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: |-
+      float v = id(batterie_tension).state;
+      if (v >= 4.20) return 100.0;
+      if (v >= 4.10) return 90.0;
+      if (v >= 4.00) return 80.0;
+      if (v >= 3.90) return 70.0;
+      if (v >= 3.80) return 55.0;
+      if (v >= 3.70) return 40.0;
+      if (v >= 3.60) return 28.0;
+      if (v >= 3.50) return 18.0;
+      if (v >= 3.40) return 12.0;
+      if (v >= 3.30) return 8.0;
+      if (v >= 3.10) return 4.0;
+      if (v >= 3.00) return 2.0;
+      return 0.0;
+
+  # ==========================================================
+  # ZONE 0 — Maison — TEMPÉRATURE
+  # ==========================================================
+
+  - platform: homeassistant
+
+    id: temperature_zone_maison
+
+    entity_id: sensor.temperature_maison
+
+    internal: true
+
+    on_value:
+
+      then:
+
+        - lvgl.label.update:
+
+            id: temperature_label_maison
+
+            text:
+
+              format: "%.1f °C"
+
+              args:
+                - x
+
+        - lvgl.widget.update:
+
+            id: temperature_dot_maison
+
+            x: !lambda |-
+
+              float t = x;
+
+              if (t < 16.0f)
+                t = 16.0f;
+
+              if (t > 30.0f)
+                t = 30.0f;
+
+              float p =
+                (t - 16.0f) / 14.0f;
+
+              float angle =
+                200.0f - (p * 220.0f);
+
+              float rad =
+                angle * 3.14159265f / 180.0f;
+
+              return (int)(165.0f * cosf(rad));
+
+            y: !lambda |-
+
+              float t = x;
+
+              if (t < 16.0f)
+                t = 16.0f;
+
+              if (t > 30.0f)
+                t = 30.0f;
+
+              float p =
+                (t - 16.0f) / 14.0f;
+
+              float angle =
+                200.0f - (p * 220.0f);
+
+              float rad =
+                angle * 3.14159265f / 180.0f;
+
+              return (int)(-165.0f * sinf(rad));
+
+  # ==========================================================
+  # ZONE 0 — Maison — CONSIGNE
+  # ==========================================================
+
+  - platform: homeassistant
+
+    id: consigne_zone_maison
+
+    entity_id: climate.zone0
+
+    attribute: temperature
+
+    internal: true
+
+    on_value:
+      then:
+
+        - lambda: |-
+
+            if (millis() - id(derniere_rotation_maison) > 3000) {
+              if (!isnan(x)) {
+                id(consigne_locale_maison) = x;
+              }
+            }
+
+        - if:
+            condition:
+              lambda: 'return id(mode_local_maison) == "off";'
+            then:
+              - lvgl.label.update:
+                  id: consigne_label_maison
+                  text: "OFF"
+            else:
+              - lvgl.label.update:
+                  id: consigne_label_maison
+                  text:
+                    format: "%.1f °C"
+                    args:
+                      - id(consigne_locale_maison)
+
+  # ==========================================================
+  # ZONE 1 — Séjour — TEMPÉRATURE
+  # ==========================================================
+
+  - platform: homeassistant
+
+    id: temperature_zone_sejour
+
+    entity_id: sensor.temperature_zone1
+
+    internal: true
+
+    on_value:
+
+      then:
+
+        - lvgl.label.update:
+
+            id: temperature_label_sejour
+
+            text:
+
+              format: "%.1f °C"
+
+              args:
+                - x
+
+        - lvgl.widget.update:
+
+            id: temperature_dot_sejour
+
+            x: !lambda |-
+
+              float t = x;
+
+              if (t < 16.0f)
+                t = 16.0f;
+
+              if (t > 30.0f)
+                t = 30.0f;
+
+              float p =
+                (t - 16.0f) / 14.0f;
+
+              float angle =
+                200.0f - (p * 220.0f);
+
+              float rad =
+                angle * 3.14159265f / 180.0f;
+
+              return (int)(165.0f * cosf(rad));
+
+            y: !lambda |-
+
+              float t = x;
+
+              if (t < 16.0f)
+                t = 16.0f;
+
+              if (t > 30.0f)
+                t = 30.0f;
+
+              float p =
+                (t - 16.0f) / 14.0f;
+
+              float angle =
+                200.0f - (p * 220.0f);
+
+              float rad =
+                angle * 3.14159265f / 180.0f;
+
+              return (int)(-165.0f * sinf(rad));
+
+  # ==========================================================
+  # ZONE 1 — Séjour — CONSIGNE
+  # ==========================================================
+
+  - platform: homeassistant
+
+    id: consigne_zone_sejour
+
+    entity_id: climate.zone1
+
+    attribute: temperature
+
+    internal: true
+
+    on_value:
+      then:
+
+        - lambda: |-
+
+            if (millis() - id(derniere_rotation_sejour) > 3000) {
+              if (!isnan(x)) {
+                id(consigne_locale_sejour) = x;
+              }
+            }
+
+        - if:
+            condition:
+              lambda: 'return id(mode_local_sejour) == "off";'
+            then:
+              - lvgl.label.update:
+                  id: consigne_label_sejour
+                  text: "OFF"
+            else:
+              - lvgl.label.update:
+                  id: consigne_label_sejour
+                  text:
+                    format: "%.1f °C"
+                    args:
+                      - id(consigne_locale_sejour)
+
+  # ==========================================================
+  # ZONE 2 — Cuisine — TEMPÉRATURE
+  # ==========================================================
+
+  - platform: homeassistant
+
+    id: temperature_zone_cuisine
+
+    entity_id: sensor.temperature_zone2
+
+    internal: true
+
+    on_value:
+
+      then:
+
+        - lvgl.label.update:
+
+            id: temperature_label_cuisine
+
+            text:
+
+              format: "%.1f °C"
+
+              args:
+                - x
+
+        - lvgl.widget.update:
+
+            id: temperature_dot_cuisine
+
+            x: !lambda |-
+
+              float t = x;
+
+              if (t < 16.0f)
+                t = 16.0f;
+
+              if (t > 30.0f)
+                t = 30.0f;
+
+              float p =
+                (t - 16.0f) / 14.0f;
+
+              float angle =
+                200.0f - (p * 220.0f);
+
+              float rad =
+                angle * 3.14159265f / 180.0f;
+
+              return (int)(165.0f * cosf(rad));
+
+            y: !lambda |-
+
+              float t = x;
+
+              if (t < 16.0f)
+                t = 16.0f;
+
+              if (t > 30.0f)
+                t = 30.0f;
+
+              float p =
+                (t - 16.0f) / 14.0f;
+
+              float angle =
+                200.0f - (p * 220.0f);
+
+              float rad =
+                angle * 3.14159265f / 180.0f;
+
+              return (int)(-165.0f * sinf(rad));
+
+  # ==========================================================
+  # ZONE 2 — Cuisine — CONSIGNE
+  # ==========================================================
+
+  - platform: homeassistant
+
+    id: consigne_zone_cuisine
+
+    entity_id: climate.zone2
+
+    attribute: temperature
+
+    internal: true
+
+    on_value:
+      then:
+
+        - lambda: |-
+
+            if (millis() - id(derniere_rotation_cuisine) > 3000) {
+              if (!isnan(x)) {
+                id(consigne_locale_cuisine) = x;
+              }
+            }
+
+        - if:
+            condition:
+              lambda: 'return id(mode_local_cuisine) == "off";'
+            then:
+              - lvgl.label.update:
+                  id: consigne_label_cuisine
+                  text: "OFF"
+            else:
+              - lvgl.label.update:
+                  id: consigne_label_cuisine
+                  text:
+                    format: "%.1f °C"
+                    args:
+                      - id(consigne_locale_cuisine)
+
+  # ==========================================================
+  # ZONE 3 — Studio — TEMPÉRATURE
+  # ==========================================================
+
+  - platform: homeassistant
+
+    id: temperature_zone_studio
+
+    entity_id: sensor.temperature_zone3
+
+    internal: true
+
+    on_value:
+
+      then:
+
+        - lvgl.label.update:
+
+            id: temperature_label_studio
+
+            text:
+
+              format: "%.1f °C"
+
+              args:
+                - x
+
+        - lvgl.widget.update:
+
+            id: temperature_dot_studio
+
+            x: !lambda |-
+
+              float t = x;
+
+              if (t < 16.0f)
+                t = 16.0f;
+
+              if (t > 30.0f)
+                t = 30.0f;
+
+              float p =
+                (t - 16.0f) / 14.0f;
+
+              float angle =
+                200.0f - (p * 220.0f);
+
+              float rad =
+                angle * 3.14159265f / 180.0f;
+
+              return (int)(165.0f * cosf(rad));
+
+            y: !lambda |-
+
+              float t = x;
+
+              if (t < 16.0f)
+                t = 16.0f;
+
+              if (t > 30.0f)
+                t = 30.0f;
+
+              float p =
+                (t - 16.0f) / 14.0f;
+
+              float angle =
+                200.0f - (p * 220.0f);
+
+              float rad =
+                angle * 3.14159265f / 180.0f;
+
+              return (int)(-165.0f * sinf(rad));
+
+  # ==========================================================
+  # ZONE 3 — Studio — CONSIGNE
+  # ==========================================================
+
+  - platform: homeassistant
+
+    id: consigne_zone_studio
+
+    entity_id: climate.zone3
+
+    attribute: temperature
+
+    internal: true
+
+    on_value:
+      then:
+
+        - lambda: |-
+
+            if (millis() - id(derniere_rotation_studio) > 3000) {
+              if (!isnan(x)) {
+                id(consigne_locale_studio) = x;
+              }
+            }
+
+        - if:
+            condition:
+              lambda: 'return id(mode_local_studio) == "off";'
+            then:
+              - lvgl.label.update:
+                  id: consigne_label_studio
+                  text: "OFF"
+            else:
+              - lvgl.label.update:
+                  id: consigne_label_studio
+                  text:
+                    format: "%.1f °C"
+                    args:
+                      - id(consigne_locale_studio)
+
+  # ==========================================================
+  # ZONE 4 — Salle de Bain — TEMPÉRATURE
+  # ==========================================================
+
+  - platform: homeassistant
+
+    id: temperature_zone_sdb
+
+    entity_id: sensor.temperature_zone4
+
+    internal: true
+
+    on_value:
+
+      then:
+
+        - lvgl.label.update:
+
+            id: temperature_label_sdb
+
+            text:
+
+              format: "%.1f °C"
+
+              args:
+                - x
+
+        - lvgl.widget.update:
+
+            id: temperature_dot_sdb
+
+            x: !lambda |-
+
+              float t = x;
+
+              if (t < 16.0f)
+                t = 16.0f;
+
+              if (t > 30.0f)
+                t = 30.0f;
+
+              float p =
+                (t - 16.0f) / 14.0f;
+
+              float angle =
+                200.0f - (p * 220.0f);
+
+              float rad =
+                angle * 3.14159265f / 180.0f;
+
+              return (int)(165.0f * cosf(rad));
+
+            y: !lambda |-
+
+              float t = x;
+
+              if (t < 16.0f)
+                t = 16.0f;
+
+              if (t > 30.0f)
+                t = 30.0f;
+
+              float p =
+                (t - 16.0f) / 14.0f;
+
+              float angle =
+                200.0f - (p * 220.0f);
+
+              float rad =
+                angle * 3.14159265f / 180.0f;
+
+              return (int)(-165.0f * sinf(rad));
+
+  # ==========================================================
+  # ZONE 4 — Salle de Bain — CONSIGNE
+  # ==========================================================
+
+  - platform: homeassistant
+
+    id: consigne_zone_sdb
+
+    entity_id: climate.zone4
+
+    attribute: temperature
+
+    internal: true
+
+    on_value:
+      then:
+
+        - lambda: |-
+
+            if (millis() - id(derniere_rotation_sdb) > 3000) {
+              if (!isnan(x)) {
+                id(consigne_locale_sdb) = x;
+              }
+            }
+
+        - if:
+            condition:
+              lambda: 'return id(mode_local_sdb) == "off";'
+            then:
+              - lvgl.label.update:
+                  id: consigne_label_sdb
+                  text: "OFF"
+            else:
+              - lvgl.label.update:
+                  id: consigne_label_sdb
+                  text:
+                    format: "%.1f °C"
+                    args:
+                      - id(consigne_locale_sdb)
+
+  # ==========================================================
+  # ZONE 5 — Enfants — TEMPÉRATURE
+  # ==========================================================
+
+  - platform: homeassistant
+
+    id: temperature_zone_enfants
+
+    entity_id: sensor.temperature_zone5
+
+    internal: true
+
+    on_value:
+
+      then:
+
+        - lvgl.label.update:
+
+            id: temperature_label_enfants
+
+            text:
+
+              format: "%.1f °C"
+
+              args:
+                - x
+
+        - lvgl.widget.update:
+
+            id: temperature_dot_enfants
+
+            x: !lambda |-
+
+              float t = x;
+
+              if (t < 16.0f)
+                t = 16.0f;
+
+              if (t > 30.0f)
+                t = 30.0f;
+
+              float p =
+                (t - 16.0f) / 14.0f;
+
+              float angle =
+                200.0f - (p * 220.0f);
+
+              float rad =
+                angle * 3.14159265f / 180.0f;
+
+              return (int)(165.0f * cosf(rad));
+
+            y: !lambda |-
+
+              float t = x;
+
+              if (t < 16.0f)
+                t = 16.0f;
+
+              if (t > 30.0f)
+                t = 30.0f;
+
+              float p =
+                (t - 16.0f) / 14.0f;
+
+              float angle =
+                200.0f - (p * 220.0f);
+
+              float rad =
+                angle * 3.14159265f / 180.0f;
+
+              return (int)(-165.0f * sinf(rad));
+
+  # ==========================================================
+  # ZONE 5 — Enfants — CONSIGNE
+  # ==========================================================
+
+  - platform: homeassistant
+
+    id: consigne_zone_enfants
+
+    entity_id: climate.zone5
+
+    attribute: temperature
+
+    internal: true
+
+    on_value:
+      then:
+
+        - lambda: |-
+
+            if (millis() - id(derniere_rotation_enfants) > 3000) {
+              if (!isnan(x)) {
+                id(consigne_locale_enfants) = x;
+              }
+            }
+
+        - if:
+            condition:
+              lambda: 'return id(mode_local_enfants) == "off";'
+            then:
+              - lvgl.label.update:
+                  id: consigne_label_enfants
+                  text: "OFF"
+            else:
+              - lvgl.label.update:
+                  id: consigne_label_enfants
+                  text:
+                    format: "%.1f °C"
+                    args:
+                      - id(consigne_locale_enfants)
+
+  # ==========================================================
+  # ZONE 6 — Clémence — TEMPÉRATURE
+  # ==========================================================
+
+  - platform: homeassistant
+
+    id: temperature_zone_clemence
+
+    entity_id: sensor.temperature_zone6
+
+    internal: true
+
+    on_value:
+
+      then:
+
+        - lvgl.label.update:
+
+            id: temperature_label_clemence
+
+            text:
+
+              format: "%.1f °C"
+
+              args:
+                - x
+
+        - lvgl.widget.update:
+
+            id: temperature_dot_clemence
+
+            x: !lambda |-
+
+              float t = x;
+
+              if (t < 16.0f)
+                t = 16.0f;
+
+              if (t > 30.0f)
+                t = 30.0f;
+
+              float p =
+                (t - 16.0f) / 14.0f;
+
+              float angle =
+                200.0f - (p * 220.0f);
+
+              float rad =
+                angle * 3.14159265f / 180.0f;
+
+              return (int)(165.0f * cosf(rad));
+
+            y: !lambda |-
+
+              float t = x;
+
+              if (t < 16.0f)
+                t = 16.0f;
+
+              if (t > 30.0f)
+                t = 30.0f;
+
+              float p =
+                (t - 16.0f) / 14.0f;
+
+              float angle =
+                200.0f - (p * 220.0f);
+
+              float rad =
+                angle * 3.14159265f / 180.0f;
+
+              return (int)(-165.0f * sinf(rad));
+
+  # ==========================================================
+  # ZONE 6 — Clémence — CONSIGNE
+  # ==========================================================
+
+  - platform: homeassistant
+
+    id: consigne_zone_clemence
+
+    entity_id: climate.chambre_clemence_clim_chambre_clemence_climatisation
+
+    attribute: temperature
+
+    internal: true
+
+    on_value:
+      then:
+
+        - lambda: |-
+
+            if (millis() - id(derniere_rotation_clemence) > 3000) {
+              if (!isnan(x)) {
+                id(consigne_locale_clemence) = x;
+              }
+            }
+
+        - if:
+            condition:
+              lambda: 'return id(mode_local_clemence) == "off";'
+            then:
+              - lvgl.label.update:
+                  id: consigne_label_clemence
+                  text: "OFF"
+            else:
+              - lvgl.label.update:
+                  id: consigne_label_clemence
+                  text:
+                    format: "%.1f °C"
+                    args:
+                      - id(consigne_locale_clemence)
+
+  # ==========================================================
+  # ZONE 7 — Parents — TEMPÉRATURE
+  # ==========================================================
+
+  - platform: homeassistant
+
+    id: temperature_zone_parents
+
+    entity_id: sensor.temperature_zone7
+
+    internal: true
+
+    on_value:
+
+      then:
+
+        - lvgl.label.update:
+
+            id: temperature_label_parents
+
+            text:
+
+              format: "%.1f °C"
+
+              args:
+                - x
+
+        - lvgl.widget.update:
+
+            id: temperature_dot_parents
+
+            x: !lambda |-
+
+              float t = x;
+
+              if (t < 16.0f)
+                t = 16.0f;
+
+              if (t > 30.0f)
+                t = 30.0f;
+
+              float p =
+                (t - 16.0f) / 14.0f;
+
+              float angle =
+                200.0f - (p * 220.0f);
+
+              float rad =
+                angle * 3.14159265f / 180.0f;
+
+              return (int)(165.0f * cosf(rad));
+
+            y: !lambda |-
+
+              float t = x;
+
+              if (t < 16.0f)
+                t = 16.0f;
+
+              if (t > 30.0f)
+                t = 30.0f;
+
+              float p =
+                (t - 16.0f) / 14.0f;
+
+              float angle =
+                200.0f - (p * 220.0f);
+
+              float rad =
+                angle * 3.14159265f / 180.0f;
+
+              return (int)(-165.0f * sinf(rad));
+
+  # ==========================================================
+  # ZONE 7 — Parents — CONSIGNE
+  # ==========================================================
+
+  - platform: homeassistant
+
+    id: consigne_zone_parents
+
+    entity_id:climate.zone7
+
+    attribute: temperature
+
+    internal: true
+
+    on_value:
+      then:
+
+        - lambda: |-
+
+            if (millis() - id(derniere_rotation_parents) > 3000) {
+              if (!isnan(x)) {
+                id(consigne_locale_parents) = x;
+              }
+            }
+
+        - if:
+            condition:
+              lambda: 'return id(mode_local_parents) == "off";'
+            then:
+              - lvgl.label.update:
+                  id: consigne_label_parents
+                  text: "OFF"
+            else:
+              - lvgl.label.update:
+                  id: consigne_label_parents
+                  text:
+                    format: "%.1f °C"
+                    args:
+                      - id(consigne_locale_parents)
+
+  # ==========================================================
+  # MOLETTE
+  # ==========================================================
+
+  - platform: rotary_encoder_custom
+
+    id: rotary_counter
+
+    name: "Molette"
+
+    pin_a: GPIO8
+    pin_b: GPIO7
+
+    min_value: -1000
+    max_value: 1000
+
+    restore_mode: ALWAYS_ZERO
+
+    publish_initial_value: false
+
+    on_clockwise:
+
+      then:
+
+        - if:
+            condition:
+              lambda: 'return !id(ecran_veille);'
+            then:
+
+              - if:
+                  condition:
+                    lambda: 'return id(current_zone) == 0 && id(mode_local_maison) != "off";'
+                  then:
+
+                    - lambda: |-
+                        float target = id(consigne_locale_maison);
+                        if (target < 16.0f || target > 30.0f) {
+                          target = id(consigne_zone_maison).state;
+                          if (isnan(target)) target = 20.0f;
+                        }
+                        target += 0.5f;
+                        if (target > 30.0f) target = 30.0f;
+                        id(consigne_locale_maison) = target;
+                        id(derniere_rotation_maison) = millis();
+
+                    - script.execute:
+                        id: envoyer_consigne_ha_maison
+
+                    - lvgl.label.update:
+                        id: consigne_label_maison
+                        text:
+                          format: "%.1f °C"
+                          args:
+                            - id(consigne_locale_maison)
+
+                    - lvgl.arc.update:
+                        id: cool_arc_maison
+                        value: !lambda |-
+                          return (int)(
+                            100.0f -
+                            ((id(consigne_locale_maison) - 16.0f) / 14.0f) * 100.0f
+                          );
+
+                    - lvgl.arc.update:
+                        id: heat_arc_maison
+                        value: !lambda |-
+                          return (int)(
+                            ((id(consigne_locale_maison) - 16.0f) / 14.0f) * 100.0f
+                          );
+
+              - if:
+                  condition:
+                    lambda: 'return id(current_zone) == 1 && id(mode_local_sejour) != "off";'
+                  then:
+
+                    - lambda: |-
+                        float target = id(consigne_locale_sejour);
+                        if (target < 16.0f || target > 30.0f) {
+                          target = id(consigne_zone_sejour).state;
+                          if (isnan(target)) target = 20.0f;
+                        }
+                        target += 0.5f;
+                        if (target > 30.0f) target = 30.0f;
+                        id(consigne_locale_sejour) = target;
+                        id(derniere_rotation_sejour) = millis();
+
+                    - script.execute:
+                        id: envoyer_consigne_ha_sejour
+
+                    - lvgl.label.update:
+                        id: consigne_label_sejour
+                        text:
+                          format: "%.1f °C"
+                          args:
+                            - id(consigne_locale_sejour)
+
+                    - lvgl.arc.update:
+                        id: cool_arc_sejour
+                        value: !lambda |-
+                          return (int)(
+                            100.0f -
+                            ((id(consigne_locale_sejour) - 16.0f) / 14.0f) * 100.0f
+                          );
+
+                    - lvgl.arc.update:
+                        id: heat_arc_sejour
+                        value: !lambda |-
+                          return (int)(
+                            ((id(consigne_locale_sejour) - 16.0f) / 14.0f) * 100.0f
+                          );
+
+              - if:
+                  condition:
+                    lambda: 'return id(current_zone) == 2 && id(mode_local_cuisine) != "off";'
+                  then:
+
+                    - lambda: |-
+                        float target = id(consigne_locale_cuisine);
+                        if (target < 16.0f || target > 30.0f) {
+                          target = id(consigne_zone_cuisine).state;
+                          if (isnan(target)) target = 20.0f;
+                        }
+                        target += 0.5f;
+                        if (target > 30.0f) target = 30.0f;
+                        id(consigne_locale_cuisine) = target;
+                        id(derniere_rotation_cuisine) = millis();
+
+                    - script.execute:
+                        id: envoyer_consigne_ha_cuisine
+
+                    - lvgl.label.update:
+                        id: consigne_label_cuisine
+                        text:
+                          format: "%.1f °C"
+                          args:
+                            - id(consigne_locale_cuisine)
+
+                    - lvgl.arc.update:
+                        id: cool_arc_cuisine
+                        value: !lambda |-
+                          return (int)(
+                            100.0f -
+                            ((id(consigne_locale_cuisine) - 16.0f) / 14.0f) * 100.0f
+                          );
+
+                    - lvgl.arc.update:
+                        id: heat_arc_cuisine
+                        value: !lambda |-
+                          return (int)(
+                            ((id(consigne_locale_cuisine) - 16.0f) / 14.0f) * 100.0f
+                          );
+
+              - if:
+                  condition:
+                    lambda: 'return id(current_zone) == 3 && id(mode_local_studio) != "off";'
+                  then:
+
+                    - lambda: |-
+                        float target = id(consigne_locale_studio);
+                        if (target < 16.0f || target > 30.0f) {
+                          target = id(consigne_zone_studio).state;
+                          if (isnan(target)) target = 20.0f;
+                        }
+                        target += 0.5f;
+                        if (target > 30.0f) target = 30.0f;
+                        id(consigne_locale_studio) = target;
+                        id(derniere_rotation_studio) = millis();
+
+                    - script.execute:
+                        id: envoyer_consigne_ha_studio
+
+                    - lvgl.label.update:
+                        id: consigne_label_studio
+                        text:
+                          format: "%.1f °C"
+                          args:
+                            - id(consigne_locale_studio)
+
+                    - lvgl.arc.update:
+                        id: cool_arc_studio
+                        value: !lambda |-
+                          return (int)(
+                            100.0f -
+                            ((id(consigne_locale_studio) - 16.0f) / 14.0f) * 100.0f
+                          );
+
+                    - lvgl.arc.update:
+                        id: heat_arc_studio
+                        value: !lambda |-
+                          return (int)(
+                            ((id(consigne_locale_studio) - 16.0f) / 14.0f) * 100.0f
+                          );
+
+              - if:
+                  condition:
+                    lambda: 'return id(current_zone) == 4 && id(mode_local_sdb) != "off";'
+                  then:
+
+                    - lambda: |-
+                        float target = id(consigne_locale_sdb);
+                        if (target < 16.0f || target > 30.0f) {
+                          target = id(consigne_zone_sdb).state;
+                          if (isnan(target)) target = 20.0f;
+                        }
+                        target += 0.5f;
+                        if (target > 30.0f) target = 30.0f;
+                        id(consigne_locale_sdb) = target;
+                        id(derniere_rotation_sdb) = millis();
+
+                    - script.execute:
+                        id: envoyer_consigne_ha_sdb
+
+                    - lvgl.label.update:
+                        id: consigne_label_sdb
+                        text:
+                          format: "%.1f °C"
+                          args:
+                            - id(consigne_locale_sdb)
+
+                    - lvgl.arc.update:
+                        id: cool_arc_sdb
+                        value: !lambda |-
+                          return (int)(
+                            100.0f -
+                            ((id(consigne_locale_sdb) - 16.0f) / 14.0f) * 100.0f
+                          );
+
+                    - lvgl.arc.update:
+                        id: heat_arc_sdb
+                        value: !lambda |-
+                          return (int)(
+                            ((id(consigne_locale_sdb) - 16.0f) / 14.0f) * 100.0f
+                          );
+
+              - if:
+                  condition:
+                    lambda: 'return id(current_zone) == 5 && id(mode_local_enfants) != "off";'
+                  then:
+
+                    - lambda: |-
+                        float target = id(consigne_locale_enfants);
+                        if (target < 16.0f || target > 30.0f) {
+                          target = id(consigne_zone_enfants).state;
+                          if (isnan(target)) target = 20.0f;
+                        }
+                        target += 0.5f;
+                        if (target > 30.0f) target = 30.0f;
+                        id(consigne_locale_enfants) = target;
+                        id(derniere_rotation_enfants) = millis();
+
+                    - script.execute:
+                        id: envoyer_consigne_ha_enfants
+
+                    - lvgl.label.update:
+                        id: consigne_label_enfants
+                        text:
+                          format: "%.1f °C"
+                          args:
+                            - id(consigne_locale_enfants)
+
+                    - lvgl.arc.update:
+                        id: cool_arc_enfants
+                        value: !lambda |-
+                          return (int)(
+                            100.0f -
+                            ((id(consigne_locale_enfants) - 16.0f) / 14.0f) * 100.0f
+                          );
+
+                    - lvgl.arc.update:
+                        id: heat_arc_enfants
+                        value: !lambda |-
+                          return (int)(
+                            ((id(consigne_locale_enfants) - 16.0f) / 14.0f) * 100.0f
+                          );
+
+              - if:
+                  condition:
+                    lambda: 'return id(current_zone) == 6 && id(mode_local_clemence) != "off";'
+                  then:
+
+                    - lambda: |-
+                        float target = id(consigne_locale_clemence);
+                        if (target < 16.0f || target > 30.0f) {
+                          target = id(consigne_zone_clemence).state;
+                          if (isnan(target)) target = 20.0f;
+                        }
+                        target += 0.5f;
+                        if (target > 30.0f) target = 30.0f;
+                        id(consigne_locale_clemence) = target;
+                        id(derniere_rotation_clemence) = millis();
+
+                    - script.execute:
+                        id: envoyer_consigne_ha_clemence
+
+                    - lvgl.label.update:
+                        id: consigne_label_clemence
+                        text:
+                          format: "%.1f °C"
+                          args:
+                            - id(consigne_locale_clemence)
+
+                    - lvgl.arc.update:
+                        id: cool_arc_clemence
+                        value: !lambda |-
+                          return (int)(
+                            100.0f -
+                            ((id(consigne_locale_clemence) - 16.0f) / 14.0f) * 100.0f
+                          );
+
+                    - lvgl.arc.update:
+                        id: heat_arc_clemence
+                        value: !lambda |-
+                          return (int)(
+                            ((id(consigne_locale_clemence) - 16.0f) / 14.0f) * 100.0f
+                          );
+
+              - if:
+                  condition:
+                    lambda: 'return id(current_zone) == 7 && id(mode_local_parents) != "off";'
+                  then:
+
+                    - lambda: |-
+                        float target = id(consigne_locale_parents);
+                        if (target < 16.0f || target > 30.0f) {
+                          target = id(consigne_zone_parents).state;
+                          if (isnan(target)) target = 20.0f;
+                        }
+                        target += 0.5f;
+                        if (target > 30.0f) target = 30.0f;
+                        id(consigne_locale_parents) = target;
+                        id(derniere_rotation_parents) = millis();
+
+                    - script.execute:
+                        id: envoyer_consigne_ha_parents
+
+                    - lvgl.label.update:
+                        id: consigne_label_parents
+                        text:
+                          format: "%.1f °C"
+                          args:
+                            - id(consigne_locale_parents)
+
+                    - lvgl.arc.update:
+                        id: cool_arc_parents
+                        value: !lambda |-
+                          return (int)(
+                            100.0f -
+                            ((id(consigne_locale_parents) - 16.0f) / 14.0f) * 100.0f
+                          );
+
+                    - lvgl.arc.update:
+                        id: heat_arc_parents
+                        value: !lambda |-
+                          return (int)(
+                            ((id(consigne_locale_parents) - 16.0f) / 14.0f) * 100.0f
+                          );
+
+
+    on_anticlockwise:
+
+      then:
+
+          - if:
+              condition:
+                lambda: 'return id(current_zone) == 0 && id(mode_local_maison) != "off";'
+              then:
+
+                - lambda: |-
+                    float target = id(consigne_locale_maison);
+                    if (target < 16.0f || target > 30.0f) {
+                      target = id(consigne_zone_maison).state;
+                      if (isnan(target)) target = 20.0f;
+                    }
+                    target -= 0.5f;
+                    if (target < 16.0f) target = 16.0f;
+                    id(consigne_locale_maison) = target;
+                    id(derniere_rotation_maison) = millis();
+
+                - script.execute:
+                    id: envoyer_consigne_ha_maison
+
+                - lvgl.label.update:
+                    id: consigne_label_maison
+                    text:
+                      format: "%.1f °C"
+                      args:
+                        - id(consigne_locale_maison)
+
+                - lvgl.arc.update:
+                    id: cool_arc_maison
+                    value: !lambda |-
+                      return (int)(
+                        100.0f -
+                        ((id(consigne_locale_maison) - 16.0f) / 14.0f) * 100.0f
+                      );
+
+                - lvgl.arc.update:
+                    id: heat_arc_maison
+                    value: !lambda |-
+                      return (int)(
+                        ((id(consigne_locale_maison) - 16.0f) / 14.0f) * 100.0f
+                      );
+
+          - if:
+              condition:
+                lambda: 'return id(current_zone) == 1 && id(mode_local_sejour) != "off";'
+              then:
+
+                - lambda: |-
+                    float target = id(consigne_locale_sejour);
+                    if (target < 16.0f || target > 30.0f) {
+                      target = id(consigne_zone_sejour).state;
+                      if (isnan(target)) target = 20.0f;
+                    }
+                    target -= 0.5f;
+                    if (target < 16.0f) target = 16.0f;
+                    id(consigne_locale_sejour) = target;
+                    id(derniere_rotation_sejour) = millis();
+
+                - script.execute:
+                    id: envoyer_consigne_ha_sejour
+
+                - lvgl.label.update:
+                    id: consigne_label_sejour
+                    text:
+                      format: "%.1f °C"
+                      args:
+                        - id(consigne_locale_sejour)
+
+                - lvgl.arc.update:
+                    id: cool_arc_sejour
+                    value: !lambda |-
+                      return (int)(
+                        100.0f -
+                        ((id(consigne_locale_sejour) - 16.0f) / 14.0f) * 100.0f
+                      );
+
+                - lvgl.arc.update:
+                    id: heat_arc_sejour
+                    value: !lambda |-
+                      return (int)(
+                        ((id(consigne_locale_sejour) - 16.0f) / 14.0f) * 100.0f
+                      );
+
+          - if:
+              condition:
+                lambda: 'return id(current_zone) == 2 && id(mode_local_cuisine) != "off";'
+              then:
+
+                - lambda: |-
+                    float target = id(consigne_locale_cuisine);
+                    if (target < 16.0f || target > 30.0f) {
+                      target = id(consigne_zone_cuisine).state;
+                      if (isnan(target)) target = 20.0f;
+                    }
+                    target -= 0.5f;
+                    if (target < 16.0f) target = 16.0f;
+                    id(consigne_locale_cuisine) = target;
+                    id(derniere_rotation_cuisine) = millis();
+
+                - script.execute:
+                    id: envoyer_consigne_ha_cuisine
+
+                - lvgl.label.update:
+                    id: consigne_label_cuisine
+                    text:
+                      format: "%.1f °C"
+                      args:
+                        - id(consigne_locale_cuisine)
+
+                - lvgl.arc.update:
+                    id: cool_arc_cuisine
+                    value: !lambda |-
+                      return (int)(
+                        100.0f -
+                        ((id(consigne_locale_cuisine) - 16.0f) / 14.0f) * 100.0f
+                      );
+
+                - lvgl.arc.update:
+                    id: heat_arc_cuisine
+                    value: !lambda |-
+                      return (int)(
+                        ((id(consigne_locale_cuisine) - 16.0f) / 14.0f) * 100.0f
+                      );
+
+          - if:
+              condition:
+                lambda: 'return id(current_zone) == 3 && id(mode_local_studio) != "off";'
+              then:
+
+                - lambda: |-
+                    float target = id(consigne_locale_studio);
+                    if (target < 16.0f || target > 30.0f) {
+                      target = id(consigne_zone_studio).state;
+                      if (isnan(target)) target = 20.0f;
+                    }
+                    target -= 0.5f;
+                    if (target < 16.0f) target = 16.0f;
+                    id(consigne_locale_studio) = target;
+                    id(derniere_rotation_studio) = millis();
+
+                - script.execute:
+                    id: envoyer_consigne_ha_studio
+
+                - lvgl.label.update:
+                    id: consigne_label_studio
+                    text:
+                      format: "%.1f °C"
+                      args:
+                        - id(consigne_locale_studio)
+
+                - lvgl.arc.update:
+                    id: cool_arc_studio
+                    value: !lambda |-
+                      return (int)(
+                        100.0f -
+                        ((id(consigne_locale_studio) - 16.0f) / 14.0f) * 100.0f
+                      );
+
+                - lvgl.arc.update:
+                    id: heat_arc_studio
+                    value: !lambda |-
+                      return (int)(
+                        ((id(consigne_locale_studio) - 16.0f) / 14.0f) * 100.0f
+                      );
+
+          - if:
+              condition:
+                lambda: 'return id(current_zone) == 4 && id(mode_local_sdb) != "off";'
+              then:
+
+                - lambda: |-
+                    float target = id(consigne_locale_sdb);
+                    if (target < 16.0f || target > 30.0f) {
+                      target = id(consigne_zone_sdb).state;
+                      if (isnan(target)) target = 20.0f;
+                    }
+                    target -= 0.5f;
+                    if (target < 16.0f) target = 16.0f;
+                    id(consigne_locale_sdb) = target;
+                    id(derniere_rotation_sdb) = millis();
+
+                - script.execute:
+                    id: envoyer_consigne_ha_sdb
+
+                - lvgl.label.update:
+                    id: consigne_label_sdb
+                    text:
+                      format: "%.1f °C"
+                      args:
+                        - id(consigne_locale_sdb)
+
+                - lvgl.arc.update:
+                    id: cool_arc_sdb
+                    value: !lambda |-
+                      return (int)(
+                        100.0f -
+                        ((id(consigne_locale_sdb) - 16.0f) / 14.0f) * 100.0f
+                      );
+
+                - lvgl.arc.update:
+                    id: heat_arc_sdb
+                    value: !lambda |-
+                      return (int)(
+                        ((id(consigne_locale_sdb) - 16.0f) / 14.0f) * 100.0f
+                      );
+
+          - if:
+              condition:
+                lambda: 'return id(current_zone) == 5 && id(mode_local_enfants) != "off";'
+              then:
+
+                - lambda: |-
+                    float target = id(consigne_locale_enfants);
+                    if (target < 16.0f || target > 30.0f) {
+                      target = id(consigne_zone_enfants).state;
+                      if (isnan(target)) target = 20.0f;
+                    }
+                    target -= 0.5f;
+                    if (target < 16.0f) target = 16.0f;
+                    id(consigne_locale_enfants) = target;
+                    id(derniere_rotation_enfants) = millis();
+
+                - script.execute:
+                    id: envoyer_consigne_ha_enfants
+
+                - lvgl.label.update:
+                    id: consigne_label_enfants
+                    text:
+                      format: "%.1f °C"
+                      args:
+                        - id(consigne_locale_enfants)
+
+                - lvgl.arc.update:
+                    id: cool_arc_enfants
+                    value: !lambda |-
+                      return (int)(
+                        100.0f -
+                        ((id(consigne_locale_enfants) - 16.0f) / 14.0f) * 100.0f
+                      );
+
+                - lvgl.arc.update:
+                    id: heat_arc_enfants
+                    value: !lambda |-
+                      return (int)(
+                        ((id(consigne_locale_enfants) - 16.0f) / 14.0f) * 100.0f
+                      );
+
+          - if:
+              condition:
+                lambda: 'return id(current_zone) == 6 && id(mode_local_clemence) != "off";'
+              then:
+
+                - lambda: |-
+                    float target = id(consigne_locale_clemence);
+                    if (target < 16.0f || target > 30.0f) {
+                      target = id(consigne_zone_clemence).state;
+                      if (isnan(target)) target = 20.0f;
+                    }
+                    target -= 0.5f;
+                    if (target < 16.0f) target = 16.0f;
+                    id(consigne_locale_clemence) = target;
+                    id(derniere_rotation_clemence) = millis();
+
+                - script.execute:
+                    id: envoyer_consigne_ha_clemence
+
+                - lvgl.label.update:
+                    id: consigne_label_clemence
+                    text:
+                      format: "%.1f °C"
+                      args:
+                        - id(consigne_locale_clemence)
+
+                - lvgl.arc.update:
+                    id: cool_arc_clemence
+                    value: !lambda |-
+                      return (int)(
+                        100.0f -
+                        ((id(consigne_locale_clemence) - 16.0f) / 14.0f) * 100.0f
+                      );
+
+                - lvgl.arc.update:
+                    id: heat_arc_clemence
+                    value: !lambda |-
+                      return (int)(
+                        ((id(consigne_locale_clemence) - 16.0f) / 14.0f) * 100.0f
+                      );
+
+          - if:
+              condition:
+                lambda: 'return id(current_zone) == 7 && id(mode_local_parents) != "off";'
+              then:
+
+                - lambda: |-
+                    float target = id(consigne_locale_parents);
+                    if (target < 16.0f || target > 30.0f) {
+                      target = id(consigne_zone_parents).state;
+                      if (isnan(target)) target = 20.0f;
+                    }
+                    target -= 0.5f;
+                    if (target < 16.0f) target = 16.0f;
+                    id(consigne_locale_parents) = target;
+                    id(derniere_rotation_parents) = millis();
+
+                - script.execute:
+                    id: envoyer_consigne_ha_parents
+
+                - lvgl.label.update:
+                    id: consigne_label_parents
+                    text:
+                      format: "%.1f °C"
+                      args:
+                        - id(consigne_locale_parents)
+
+                - lvgl.arc.update:
+                    id: cool_arc_parents
+                    value: !lambda |-
+                      return (int)(
+                        100.0f -
+                        ((id(consigne_locale_parents) - 16.0f) / 14.0f) * 100.0f
+                      );
+
+                - lvgl.arc.update:
+                    id: heat_arc_parents
+                    value: !lambda |-
+                      return (int)(
+                        ((id(consigne_locale_parents) - 16.0f) / 14.0f) * 100.0f
+                      );
+
+
+# ============================================================
+# MODE — PAR ZONE
+# ============================================================
+
+text_sensor:
+
+  # ==========================================================
+  # ZONE 0 — Maison — MODE
+  # ==========================================================
+
+  - platform: homeassistant
+
+    id: mode_zone_maison
+
+    entity_id: climate.zone0
+
+    internal: true
+
+    on_value:
+
+      then:
+
+        - lambda: |-
+
+            id(mode_local_maison) = x;
+
+        - if:
+            condition:
+              lambda: 'return x == "off";'
+            then:
+              - lvgl.widget.hide:
+                  id: cool_arc_maison
+              - lvgl.widget.hide:
+                  id: heat_arc_maison
+              - lvgl.widget.update:
+                  id: button_off_maison
+                  bg_color: 0x555555
+              - lvgl.widget.update:
+                  id: button_clim_maison
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_heat_maison
+                  bg_color: 0x202020
+              - lvgl.label.update:
+                  id: consigne_label_maison
+                  text: "OFF"
+
+        - if:
+            condition:
+              lambda: 'return x == "cool";'
+            then:
+              - lvgl.widget.show:
+                  id: cool_arc_maison
+              - lvgl.arc.update:
+                  id: cool_arc_maison
+                  value: !lambda |-
+                    return (int)(
+                      100.0f -
+                      ((id(consigne_locale_maison) - 16.0f) / 14.0f) * 100.0f
+                    );
+              - lvgl.widget.hide:
+                  id: heat_arc_maison
+              - lvgl.widget.update:
+                  id: button_off_maison
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_clim_maison
+                  bg_color: 0x03A9F4
+              - lvgl.widget.update:
+                  id: button_heat_maison
+                  bg_color: 0x202020
+              - lvgl.label.update:
+                  id: consigne_label_maison
+                  text:
+                    format: "%.1f °C"
+                    args:
+                      - id(consigne_locale_maison)
+
+        - if:
+            condition:
+              lambda: 'return x == "heat";'
+            then:
+              - lvgl.widget.hide:
+                  id: cool_arc_maison
+              - lvgl.widget.show:
+                  id: heat_arc_maison
+              - lvgl.arc.update:
+                  id: heat_arc_maison
+                  value: !lambda |-
+                    return (int)(
+                      ((id(consigne_locale_maison) - 16.0f) / 14.0f) * 100.0f
+                    );
+              - lvgl.widget.update:
+                  id: button_off_maison
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_clim_maison
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_heat_maison
+                  bg_color: 0xFF9800
+              - lvgl.label.update:
+                  id: consigne_label_maison
+                  text:
+                    format: "%.1f °C"
+                    args:
+                      - id(consigne_locale_maison)
+
+  # ==========================================================
+  # ZONE 1 — Séjour — MODE
+  # ==========================================================
+
+  - platform: homeassistant
+
+    id: mode_zone_sejour
+
+    entity_id: climate.zone1
+
+    internal: true
+
+    on_value:
+
+      then:
+
+        - lambda: |-
+
+            id(mode_local_sejour) = x;
+
+        - if:
+            condition:
+              lambda: 'return x == "off";'
+            then:
+              - lvgl.widget.hide:
+                  id: cool_arc_sejour
+              - lvgl.widget.hide:
+                  id: heat_arc_sejour
+              - lvgl.widget.update:
+                  id: button_off_sejour
+                  bg_color: 0x555555
+              - lvgl.widget.update:
+                  id: button_clim_sejour
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_heat_sejour
+                  bg_color: 0x202020
+              - lvgl.label.update:
+                  id: consigne_label_sejour
+                  text: "OFF"
+
+        - if:
+            condition:
+              lambda: 'return x == "cool";'
+            then:
+              - lvgl.widget.show:
+                  id: cool_arc_sejour
+              - lvgl.arc.update:
+                  id: cool_arc_sejour
+                  value: !lambda |-
+                    return (int)(
+                      100.0f -
+                      ((id(consigne_locale_sejour) - 16.0f) / 14.0f) * 100.0f
+                    );
+              - lvgl.widget.hide:
+                  id: heat_arc_sejour
+              - lvgl.widget.update:
+                  id: button_off_sejour
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_clim_sejour
+                  bg_color: 0x03A9F4
+              - lvgl.widget.update:
+                  id: button_heat_sejour
+                  bg_color: 0x202020
+              - lvgl.label.update:
+                  id: consigne_label_sejour
+                  text:
+                    format: "%.1f °C"
+                    args:
+                      - id(consigne_locale_sejour)
+
+        - if:
+            condition:
+              lambda: 'return x == "heat";'
+            then:
+              - lvgl.widget.hide:
+                  id: cool_arc_sejour
+              - lvgl.widget.show:
+                  id: heat_arc_sejour
+              - lvgl.arc.update:
+                  id: heat_arc_sejour
+                  value: !lambda |-
+                    return (int)(
+                      ((id(consigne_locale_sejour) - 16.0f) / 14.0f) * 100.0f
+                    );
+              - lvgl.widget.update:
+                  id: button_off_sejour
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_clim_sejour
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_heat_sejour
+                  bg_color: 0xFF9800
+              - lvgl.label.update:
+                  id: consigne_label_sejour
+                  text:
+                    format: "%.1f °C"
+                    args:
+                      - id(consigne_locale_sejour)
+
+  # ==========================================================
+  # ZONE 2 — Cuisine — MODE
+  # ==========================================================
+
+  - platform: homeassistant
+
+    id: mode_zone_cuisine
+
+    entity_id: climate.zone2
+
+    internal: true
+
+    on_value:
+
+      then:
+
+        - lambda: |-
+
+            id(mode_local_cuisine) = x;
+
+        - if:
+            condition:
+              lambda: 'return x == "off";'
+            then:
+              - lvgl.widget.hide:
+                  id: cool_arc_cuisine
+              - lvgl.widget.hide:
+                  id: heat_arc_cuisine
+              - lvgl.widget.update:
+                  id: button_off_cuisine
+                  bg_color: 0x555555
+              - lvgl.widget.update:
+                  id: button_clim_cuisine
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_heat_cuisine
+                  bg_color: 0x202020
+              - lvgl.label.update:
+                  id: consigne_label_cuisine
+                  text: "OFF"
+
+        - if:
+            condition:
+              lambda: 'return x == "cool";'
+            then:
+              - lvgl.widget.show:
+                  id: cool_arc_cuisine
+              - lvgl.arc.update:
+                  id: cool_arc_cuisine
+                  value: !lambda |-
+                    return (int)(
+                      100.0f -
+                      ((id(consigne_locale_cuisine) - 16.0f) / 14.0f) * 100.0f
+                    );
+              - lvgl.widget.hide:
+                  id: heat_arc_cuisine
+              - lvgl.widget.update:
+                  id: button_off_cuisine
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_clim_cuisine
+                  bg_color: 0x03A9F4
+              - lvgl.widget.update:
+                  id: button_heat_cuisine
+                  bg_color: 0x202020
+              - lvgl.label.update:
+                  id: consigne_label_cuisine
+                  text:
+                    format: "%.1f °C"
+                    args:
+                      - id(consigne_locale_cuisine)
+
+        - if:
+            condition:
+              lambda: 'return x == "heat";'
+            then:
+              - lvgl.widget.hide:
+                  id: cool_arc_cuisine
+              - lvgl.widget.show:
+                  id: heat_arc_cuisine
+              - lvgl.arc.update:
+                  id: heat_arc_cuisine
+                  value: !lambda |-
+                    return (int)(
+                      ((id(consigne_locale_cuisine) - 16.0f) / 14.0f) * 100.0f
+                    );
+              - lvgl.widget.update:
+                  id: button_off_cuisine
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_clim_cuisine
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_heat_cuisine
+                  bg_color: 0xFF9800
+              - lvgl.label.update:
+                  id: consigne_label_cuisine
+                  text:
+                    format: "%.1f °C"
+                    args:
+                      - id(consigne_locale_cuisine)
+
+  # ==========================================================
+  # ZONE 3 — Studio — MODE
+  # ==========================================================
+
+  - platform: homeassistant
+
+    id: mode_zone_studio
+
+    entity_id: climate.zone3
+
+    internal: true
+
+    on_value:
+
+      then:
+
+        - lambda: |-
+
+            id(mode_local_studio) = x;
+
+        - if:
+            condition:
+              lambda: 'return x == "off";'
+            then:
+              - lvgl.widget.hide:
+                  id: cool_arc_studio
+              - lvgl.widget.hide:
+                  id: heat_arc_studio
+              - lvgl.widget.update:
+                  id: button_off_studio
+                  bg_color: 0x555555
+              - lvgl.widget.update:
+                  id: button_clim_studio
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_heat_studio
+                  bg_color: 0x202020
+              - lvgl.label.update:
+                  id: consigne_label_studio
+                  text: "OFF"
+
+        - if:
+            condition:
+              lambda: 'return x == "cool";'
+            then:
+              - lvgl.widget.show:
+                  id: cool_arc_studio
+              - lvgl.arc.update:
+                  id: cool_arc_studio
+                  value: !lambda |-
+                    return (int)(
+                      100.0f -
+                      ((id(consigne_locale_studio) - 16.0f) / 14.0f) * 100.0f
+                    );
+              - lvgl.widget.hide:
+                  id: heat_arc_studio
+              - lvgl.widget.update:
+                  id: button_off_studio
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_clim_studio
+                  bg_color: 0x03A9F4
+              - lvgl.widget.update:
+                  id: button_heat_studio
+                  bg_color: 0x202020
+              - lvgl.label.update:
+                  id: consigne_label_studio
+                  text:
+                    format: "%.1f °C"
+                    args:
+                      - id(consigne_locale_studio)
+
+        - if:
+            condition:
+              lambda: 'return x == "heat";'
+            then:
+              - lvgl.widget.hide:
+                  id: cool_arc_studio
+              - lvgl.widget.show:
+                  id: heat_arc_studio
+              - lvgl.arc.update:
+                  id: heat_arc_studio
+                  value: !lambda |-
+                    return (int)(
+                      ((id(consigne_locale_studio) - 16.0f) / 14.0f) * 100.0f
+                    );
+              - lvgl.widget.update:
+                  id: button_off_studio
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_clim_studio
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_heat_studio
+                  bg_color: 0xFF9800
+              - lvgl.label.update:
+                  id: consigne_label_studio
+                  text:
+                    format: "%.1f °C"
+                    args:
+                      - id(consigne_locale_studio)
+
+  # ==========================================================
+  # ZONE 4 — Salle de Bain — MODE
+  # ==========================================================
+
+  - platform: homeassistant
+
+    id: mode_zone_sdb
+
+    entity_id: climate.zone4
+
+    internal: true
+
+    on_value:
+
+      then:
+
+        - lambda: |-
+
+            id(mode_local_sdb) = x;
+
+        - if:
+            condition:
+              lambda: 'return x == "off";'
+            then:
+              - lvgl.widget.hide:
+                  id: cool_arc_sdb
+              - lvgl.widget.hide:
+                  id: heat_arc_sdb
+              - lvgl.widget.update:
+                  id: button_off_sdb
+                  bg_color: 0x555555
+              - lvgl.widget.update:
+                  id: button_clim_sdb
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_heat_sdb
+                  bg_color: 0x202020
+              - lvgl.label.update:
+                  id: consigne_label_sdb
+                  text: "OFF"
+
+        - if:
+            condition:
+              lambda: 'return x == "cool";'
+            then:
+              - lvgl.widget.show:
+                  id: cool_arc_sdb
+              - lvgl.arc.update:
+                  id: cool_arc_sdb
+                  value: !lambda |-
+                    return (int)(
+                      100.0f -
+                      ((id(consigne_locale_sdb) - 16.0f) / 14.0f) * 100.0f
+                    );
+              - lvgl.widget.hide:
+                  id: heat_arc_sdb
+              - lvgl.widget.update:
+                  id: button_off_sdb
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_clim_sdb
+                  bg_color: 0x03A9F4
+              - lvgl.widget.update:
+                  id: button_heat_sdb
+                  bg_color: 0x202020
+              - lvgl.label.update:
+                  id: consigne_label_sdb
+                  text:
+                    format: "%.1f °C"
+                    args:
+                      - id(consigne_locale_sdb)
+
+        - if:
+            condition:
+              lambda: 'return x == "heat";'
+            then:
+              - lvgl.widget.hide:
+                  id: cool_arc_sdb
+              - lvgl.widget.show:
+                  id: heat_arc_sdb
+              - lvgl.arc.update:
+                  id: heat_arc_sdb
+                  value: !lambda |-
+                    return (int)(
+                      ((id(consigne_locale_sdb) - 16.0f) / 14.0f) * 100.0f
+                    );
+              - lvgl.widget.update:
+                  id: button_off_sdb
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_clim_sdb
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_heat_sdb
+                  bg_color: 0xFF9800
+              - lvgl.label.update:
+                  id: consigne_label_sdb
+                  text:
+                    format: "%.1f °C"
+                    args:
+                      - id(consigne_locale_sdb)
+
+  # ==========================================================
+  # ZONE 5 — Enfants — MODE
+  # ==========================================================
+
+  - platform: homeassistant
+
+    id: mode_zone_enfants
+
+    entity_id: climate.zone5
+
+    internal: true
+
+    on_value:
+
+      then:
+
+        - lambda: |-
+
+            id(mode_local_enfants) = x;
+
+        - if:
+            condition:
+              lambda: 'return x == "off";'
+            then:
+              - lvgl.widget.hide:
+                  id: cool_arc_enfants
+              - lvgl.widget.hide:
+                  id: heat_arc_enfants
+              - lvgl.widget.update:
+                  id: button_off_enfants
+                  bg_color: 0x555555
+              - lvgl.widget.update:
+                  id: button_clim_enfants
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_heat_enfants
+                  bg_color: 0x202020
+              - lvgl.label.update:
+                  id: consigne_label_enfants
+                  text: "OFF"
+
+        - if:
+            condition:
+              lambda: 'return x == "cool";'
+            then:
+              - lvgl.widget.show:
+                  id: cool_arc_enfants
+              - lvgl.arc.update:
+                  id: cool_arc_enfants
+                  value: !lambda |-
+                    return (int)(
+                      100.0f -
+                      ((id(consigne_locale_enfants) - 16.0f) / 14.0f) * 100.0f
+                    );
+              - lvgl.widget.hide:
+                  id: heat_arc_enfants
+              - lvgl.widget.update:
+                  id: button_off_enfants
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_clim_enfants
+                  bg_color: 0x03A9F4
+              - lvgl.widget.update:
+                  id: button_heat_enfants
+                  bg_color: 0x202020
+              - lvgl.label.update:
+                  id: consigne_label_enfants
+                  text:
+                    format: "%.1f °C"
+                    args:
+                      - id(consigne_locale_enfants)
+
+        - if:
+            condition:
+              lambda: 'return x == "heat";'
+            then:
+              - lvgl.widget.hide:
+                  id: cool_arc_enfants
+              - lvgl.widget.show:
+                  id: heat_arc_enfants
+              - lvgl.arc.update:
+                  id: heat_arc_enfants
+                  value: !lambda |-
+                    return (int)(
+                      ((id(consigne_locale_enfants) - 16.0f) / 14.0f) * 100.0f
+                    );
+              - lvgl.widget.update:
+                  id: button_off_enfants
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_clim_enfants
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_heat_enfants
+                  bg_color: 0xFF9800
+              - lvgl.label.update:
+                  id: consigne_label_enfants
+                  text:
+                    format: "%.1f °C"
+                    args:
+                      - id(consigne_locale_enfants)
+
+  # ==========================================================
+  # ZONE 6 — Clémence — MODE
+  # ==========================================================
+
+  - platform: homeassistant
+
+    id: mode_zone_clemence
+
+    entity_id: climate.chambre_clemence_clim_chambre_clemence_climatisation
+
+    internal: true
+
+    on_value:
+
+      then:
+
+        - lambda: |-
+
+            id(mode_local_clemence) = x;
+
+        - if:
+            condition:
+              lambda: 'return x == "off";'
+            then:
+              - lvgl.widget.hide:
+                  id: cool_arc_clemence
+              - lvgl.widget.hide:
+                  id: heat_arc_clemence
+              - lvgl.widget.update:
+                  id: button_off_clemence
+                  bg_color: 0x555555
+              - lvgl.widget.update:
+                  id: button_clim_clemence
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_heat_clemence
+                  bg_color: 0x202020
+              - lvgl.label.update:
+                  id: consigne_label_clemence
+                  text: "OFF"
+
+        - if:
+            condition:
+              lambda: 'return x == "cool";'
+            then:
+              - lvgl.widget.show:
+                  id: cool_arc_clemence
+              - lvgl.arc.update:
+                  id: cool_arc_clemence
+                  value: !lambda |-
+                    return (int)(
+                      100.0f -
+                      ((id(consigne_locale_clemence) - 16.0f) / 14.0f) * 100.0f
+                    );
+              - lvgl.widget.hide:
+                  id: heat_arc_clemence
+              - lvgl.widget.update:
+                  id: button_off_clemence
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_clim_clemence
+                  bg_color: 0x03A9F4
+              - lvgl.widget.update:
+                  id: button_heat_clemence
+                  bg_color: 0x202020
+              - lvgl.label.update:
+                  id: consigne_label_clemence
+                  text:
+                    format: "%.1f °C"
+                    args:
+                      - id(consigne_locale_clemence)
+
+        - if:
+            condition:
+              lambda: 'return x == "heat";'
+            then:
+              - lvgl.widget.hide:
+                  id: cool_arc_clemence
+              - lvgl.widget.show:
+                  id: heat_arc_clemence
+              - lvgl.arc.update:
+                  id: heat_arc_clemence
+                  value: !lambda |-
+                    return (int)(
+                      ((id(consigne_locale_clemence) - 16.0f) / 14.0f) * 100.0f
+                    );
+              - lvgl.widget.update:
+                  id: button_off_clemence
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_clim_clemence
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_heat_clemence
+                  bg_color: 0xFF9800
+              - lvgl.label.update:
+                  id: consigne_label_clemence
+                  text:
+                    format: "%.1f °C"
+                    args:
+                      - id(consigne_locale_clemence)
+
+  # ==========================================================
+  # ZONE 7 — Parents — MODE
+  # ==========================================================
+
+  - platform: homeassistant
+
+    id: mode_zone_parents
+
+    entity_id:climate.zone7
+
+    internal: true
+
+    on_value:
+
+      then:
+
+        - lambda: |-
+
+            id(mode_local_parents) = x;
+
+        - if:
+            condition:
+              lambda: 'return x == "off";'
+            then:
+              - lvgl.widget.hide:
+                  id: cool_arc_parents
+              - lvgl.widget.hide:
+                  id: heat_arc_parents
+              - lvgl.widget.update:
+                  id: button_off_parents
+                  bg_color: 0x555555
+              - lvgl.widget.update:
+                  id: button_clim_parents
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_heat_parents
+                  bg_color: 0x202020
+              - lvgl.label.update:
+                  id: consigne_label_parents
+                  text: "OFF"
+
+        - if:
+            condition:
+              lambda: 'return x == "cool";'
+            then:
+              - lvgl.widget.show:
+                  id: cool_arc_parents
+              - lvgl.arc.update:
+                  id: cool_arc_parents
+                  value: !lambda |-
+                    return (int)(
+                      100.0f -
+                      ((id(consigne_locale_parents) - 16.0f) / 14.0f) * 100.0f
+                    );
+              - lvgl.widget.hide:
+                  id: heat_arc_parents
+              - lvgl.widget.update:
+                  id: button_off_parents
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_clim_parents
+                  bg_color: 0x03A9F4
+              - lvgl.widget.update:
+                  id: button_heat_parents
+                  bg_color: 0x202020
+              - lvgl.label.update:
+                  id: consigne_label_parents
+                  text:
+                    format: "%.1f °C"
+                    args:
+                      - id(consigne_locale_parents)
+
+        - if:
+            condition:
+              lambda: 'return x == "heat";'
+            then:
+              - lvgl.widget.hide:
+                  id: cool_arc_parents
+              - lvgl.widget.show:
+                  id: heat_arc_parents
+              - lvgl.arc.update:
+                  id: heat_arc_parents
+                  value: !lambda |-
+                    return (int)(
+                      ((id(consigne_locale_parents) - 16.0f) / 14.0f) * 100.0f
+                    );
+              - lvgl.widget.update:
+                  id: button_off_parents
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_clim_parents
+                  bg_color: 0x202020
+              - lvgl.widget.update:
+                  id: button_heat_parents
+                  bg_color: 0xFF9800
+              - lvgl.label.update:
+                  id: consigne_label_parents
+                  text:
+                    format: "%.1f °C"
+                    args:
+                      - id(consigne_locale_parents)
+
+# ============================================================
+# SCRIPTS — PAR ZONE
+# ============================================================
+
+script:
+
+  # ---- ZONE 0 — Maison ----
+
+  - id: envoyer_consigne_ha_maison
+    mode: restart
+    then:
+      - delay: 2s
+      - homeassistant.action:
+          action: climate.set_temperature
+          data:
+            entity_id: climate.zone0
+            temperature: !lambda |-
+              return id(consigne_locale_maison);
+
+  - id: appliquer_mode_local_maison
+    parameters:
+      mode: string
+    then:
+      - lambda: |-
+          id(mode_local_maison) = mode;
+
+      - if:
+          condition:
+            lambda: 'return mode == "off";'
+          then:
+            - lvgl.widget.hide:
+                id: cool_arc_maison
+            - lvgl.widget.hide:
+                id: heat_arc_maison
+            - lvgl.widget.update:
+                id: button_off_maison
+                bg_color: 0x555555
+            - lvgl.widget.update:
+                id: button_clim_maison
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_heat_maison
+                bg_color: 0x202020
+            - lvgl.label.update:
+                id: consigne_label_maison
+                text: "OFF"
+
+      - if:
+          condition:
+            lambda: 'return mode == "cool";'
+          then:
+            - lvgl.widget.show:
+                id: cool_arc_maison
+            - lvgl.widget.hide:
+                id: heat_arc_maison
+            - lvgl.widget.update:
+                id: button_off_maison
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_clim_maison
+                bg_color: 0x03A9F4
+            - lvgl.widget.update:
+                id: button_heat_maison
+                bg_color: 0x202020
+            - lvgl.label.update:
+                id: consigne_label_maison
+                text:
+                  format: "%.1f °C"
+                  args:
+                    - id(consigne_locale_maison)
+
+      - if:
+          condition:
+            lambda: 'return mode == "heat";'
+          then:
+            - lvgl.widget.hide:
+                id: cool_arc_maison
+            - lvgl.widget.show:
+                id: heat_arc_maison
+            - lvgl.widget.update:
+                id: button_off_maison
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_clim_maison
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_heat_maison
+                bg_color: 0xFF9800
+            - lvgl.label.update:
+                id: consigne_label_maison
+                text:
+                  format: "%.1f °C"
+                  args:
+                    - id(consigne_locale_maison)
+
+  # ---- ZONE 1 — Séjour ----
+
+  - id: envoyer_consigne_ha_sejour
+    mode: restart
+    then:
+      - delay: 2s
+      - homeassistant.action:
+          action: climate.set_temperature
+          data:
+            entity_id: climate.zone1
+            temperature: !lambda |-
+              return id(consigne_locale_sejour);
+
+  - id: appliquer_mode_local_sejour
+    parameters:
+      mode: string
+    then:
+      - lambda: |-
+          id(mode_local_sejour) = mode;
+
+      - if:
+          condition:
+            lambda: 'return mode == "off";'
+          then:
+            - lvgl.widget.hide:
+                id: cool_arc_sejour
+            - lvgl.widget.hide:
+                id: heat_arc_sejour
+            - lvgl.widget.update:
+                id: button_off_sejour
+                bg_color: 0x555555
+            - lvgl.widget.update:
+                id: button_clim_sejour
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_heat_sejour
+                bg_color: 0x202020
+            - lvgl.label.update:
+                id: consigne_label_sejour
+                text: "OFF"
+
+      - if:
+          condition:
+            lambda: 'return mode == "cool";'
+          then:
+            - lvgl.widget.show:
+                id: cool_arc_sejour
+            - lvgl.widget.hide:
+                id: heat_arc_sejour
+            - lvgl.widget.update:
+                id: button_off_sejour
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_clim_sejour
+                bg_color: 0x03A9F4
+            - lvgl.widget.update:
+                id: button_heat_sejour
+                bg_color: 0x202020
+            - lvgl.label.update:
+                id: consigne_label_sejour
+                text:
+                  format: "%.1f °C"
+                  args:
+                    - id(consigne_locale_sejour)
+
+      - if:
+          condition:
+            lambda: 'return mode == "heat";'
+          then:
+            - lvgl.widget.hide:
+                id: cool_arc_sejour
+            - lvgl.widget.show:
+                id: heat_arc_sejour
+            - lvgl.widget.update:
+                id: button_off_sejour
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_clim_sejour
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_heat_sejour
+                bg_color: 0xFF9800
+            - lvgl.label.update:
+                id: consigne_label_sejour
+                text:
+                  format: "%.1f °C"
+                  args:
+                    - id(consigne_locale_sejour)
+
+  # ---- ZONE 2 — Cuisine ----
+
+  - id: envoyer_consigne_ha_cuisine
+    mode: restart
+    then:
+      - delay: 2s
+      - homeassistant.action:
+          action: climate.set_temperature
+          data:
+            entity_id: climate.zone2
+            temperature: !lambda |-
+              return id(consigne_locale_cuisine);
+
+  - id: appliquer_mode_local_cuisine
+    parameters:
+      mode: string
+    then:
+      - lambda: |-
+          id(mode_local_cuisine) = mode;
+
+      - if:
+          condition:
+            lambda: 'return mode == "off";'
+          then:
+            - lvgl.widget.hide:
+                id: cool_arc_cuisine
+            - lvgl.widget.hide:
+                id: heat_arc_cuisine
+            - lvgl.widget.update:
+                id: button_off_cuisine
+                bg_color: 0x555555
+            - lvgl.widget.update:
+                id: button_clim_cuisine
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_heat_cuisine
+                bg_color: 0x202020
+            - lvgl.label.update:
+                id: consigne_label_cuisine
+                text: "OFF"
+
+      - if:
+          condition:
+            lambda: 'return mode == "cool";'
+          then:
+            - lvgl.widget.show:
+                id: cool_arc_cuisine
+            - lvgl.widget.hide:
+                id: heat_arc_cuisine
+            - lvgl.widget.update:
+                id: button_off_cuisine
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_clim_cuisine
+                bg_color: 0x03A9F4
+            - lvgl.widget.update:
+                id: button_heat_cuisine
+                bg_color: 0x202020
+            - lvgl.label.update:
+                id: consigne_label_cuisine
+                text:
+                  format: "%.1f °C"
+                  args:
+                    - id(consigne_locale_cuisine)
+
+      - if:
+          condition:
+            lambda: 'return mode == "heat";'
+          then:
+            - lvgl.widget.hide:
+                id: cool_arc_cuisine
+            - lvgl.widget.show:
+                id: heat_arc_cuisine
+            - lvgl.widget.update:
+                id: button_off_cuisine
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_clim_cuisine
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_heat_cuisine
+                bg_color: 0xFF9800
+            - lvgl.label.update:
+                id: consigne_label_cuisine
+                text:
+                  format: "%.1f °C"
+                  args:
+                    - id(consigne_locale_cuisine)
+
+  # ---- ZONE 3 — Studio ----
+
+  - id: envoyer_consigne_ha_studio
+    mode: restart
+    then:
+      - delay: 2s
+      - homeassistant.action:
+          action: climate.set_temperature
+          data:
+            entity_id: climate.zone3
+            temperature: !lambda |-
+              return id(consigne_locale_studio);
+
+  - id: appliquer_mode_local_studio
+    parameters:
+      mode: string
+    then:
+      - lambda: |-
+          id(mode_local_studio) = mode;
+
+      - if:
+          condition:
+            lambda: 'return mode == "off";'
+          then:
+            - lvgl.widget.hide:
+                id: cool_arc_studio
+            - lvgl.widget.hide:
+                id: heat_arc_studio
+            - lvgl.widget.update:
+                id: button_off_studio
+                bg_color: 0x555555
+            - lvgl.widget.update:
+                id: button_clim_studio
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_heat_studio
+                bg_color: 0x202020
+            - lvgl.label.update:
+                id: consigne_label_studio
+                text: "OFF"
+
+      - if:
+          condition:
+            lambda: 'return mode == "cool";'
+          then:
+            - lvgl.widget.show:
+                id: cool_arc_studio
+            - lvgl.widget.hide:
+                id: heat_arc_studio
+            - lvgl.widget.update:
+                id: button_off_studio
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_clim_studio
+                bg_color: 0x03A9F4
+            - lvgl.widget.update:
+                id: button_heat_studio
+                bg_color: 0x202020
+            - lvgl.label.update:
+                id: consigne_label_studio
+                text:
+                  format: "%.1f °C"
+                  args:
+                    - id(consigne_locale_studio)
+
+      - if:
+          condition:
+            lambda: 'return mode == "heat";'
+          then:
+            - lvgl.widget.hide:
+                id: cool_arc_studio
+            - lvgl.widget.show:
+                id: heat_arc_studio
+            - lvgl.widget.update:
+                id: button_off_studio
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_clim_studio
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_heat_studio
+                bg_color: 0xFF9800
+            - lvgl.label.update:
+                id: consigne_label_studio
+                text:
+                  format: "%.1f °C"
+                  args:
+                    - id(consigne_locale_studio)
+
+  # ---- ZONE 4 — Salle de Bain ----
+
+  - id: envoyer_consigne_ha_sdb
+    mode: restart
+    then:
+      - delay: 2s
+      - homeassistant.action:
+          action: climate.set_temperature
+          data:
+            entity_id: climate.zone4
+            temperature: !lambda |-
+              return id(consigne_locale_sdb);
+
+  - id: appliquer_mode_local_sdb
+    parameters:
+      mode: string
+    then:
+      - lambda: |-
+          id(mode_local_sdb) = mode;
+
+      - if:
+          condition:
+            lambda: 'return mode == "off";'
+          then:
+            - lvgl.widget.hide:
+                id: cool_arc_sdb
+            - lvgl.widget.hide:
+                id: heat_arc_sdb
+            - lvgl.widget.update:
+                id: button_off_sdb
+                bg_color: 0x555555
+            - lvgl.widget.update:
+                id: button_clim_sdb
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_heat_sdb
+                bg_color: 0x202020
+            - lvgl.label.update:
+                id: consigne_label_sdb
+                text: "OFF"
+
+      - if:
+          condition:
+            lambda: 'return mode == "cool";'
+          then:
+            - lvgl.widget.show:
+                id: cool_arc_sdb
+            - lvgl.widget.hide:
+                id: heat_arc_sdb
+            - lvgl.widget.update:
+                id: button_off_sdb
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_clim_sdb
+                bg_color: 0x03A9F4
+            - lvgl.widget.update:
+                id: button_heat_sdb
+                bg_color: 0x202020
+            - lvgl.label.update:
+                id: consigne_label_sdb
+                text:
+                  format: "%.1f °C"
+                  args:
+                    - id(consigne_locale_sdb)
+
+      - if:
+          condition:
+            lambda: 'return mode == "heat";'
+          then:
+            - lvgl.widget.hide:
+                id: cool_arc_sdb
+            - lvgl.widget.show:
+                id: heat_arc_sdb
+            - lvgl.widget.update:
+                id: button_off_sdb
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_clim_sdb
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_heat_sdb
+                bg_color: 0xFF9800
+            - lvgl.label.update:
+                id: consigne_label_sdb
+                text:
+                  format: "%.1f °C"
+                  args:
+                    - id(consigne_locale_sdb)
+
+  # ---- ZONE 5 — Enfants ----
+
+  - id: envoyer_consigne_ha_enfants
+    mode: restart
+    then:
+      - delay: 2s
+      - homeassistant.action:
+          action: climate.set_temperature
+          data:
+            entity_id: climate.zone5
+            temperature: !lambda |-
+              return id(consigne_locale_enfants);
+
+  - id: appliquer_mode_local_enfants
+    parameters:
+      mode: string
+    then:
+      - lambda: |-
+          id(mode_local_enfants) = mode;
+
+      - if:
+          condition:
+            lambda: 'return mode == "off";'
+          then:
+            - lvgl.widget.hide:
+                id: cool_arc_enfants
+            - lvgl.widget.hide:
+                id: heat_arc_enfants
+            - lvgl.widget.update:
+                id: button_off_enfants
+                bg_color: 0x555555
+            - lvgl.widget.update:
+                id: button_clim_enfants
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_heat_enfants
+                bg_color: 0x202020
+            - lvgl.label.update:
+                id: consigne_label_enfants
+                text: "OFF"
+
+      - if:
+          condition:
+            lambda: 'return mode == "cool";'
+          then:
+            - lvgl.widget.show:
+                id: cool_arc_enfants
+            - lvgl.widget.hide:
+                id: heat_arc_enfants
+            - lvgl.widget.update:
+                id: button_off_enfants
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_clim_enfants
+                bg_color: 0x03A9F4
+            - lvgl.widget.update:
+                id: button_heat_enfants
+                bg_color: 0x202020
+            - lvgl.label.update:
+                id: consigne_label_enfants
+                text:
+                  format: "%.1f °C"
+                  args:
+                    - id(consigne_locale_enfants)
+
+      - if:
+          condition:
+            lambda: 'return mode == "heat";'
+          then:
+            - lvgl.widget.hide:
+                id: cool_arc_enfants
+            - lvgl.widget.show:
+                id: heat_arc_enfants
+            - lvgl.widget.update:
+                id: button_off_enfants
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_clim_enfants
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_heat_enfants
+                bg_color: 0xFF9800
+            - lvgl.label.update:
+                id: consigne_label_enfants
+                text:
+                  format: "%.1f °C"
+                  args:
+                    - id(consigne_locale_enfants)
+
+  # ---- ZONE 6 — Clémence ----
+
+  - id: envoyer_consigne_ha_clemence
+    mode: restart
+    then:
+      - delay: 2s
+      - homeassistant.action:
+          action: climate.set_temperature
+          data:
+            entity_id: climate.chambre_clemence_clim_chambre_clemence_climatisation
+            temperature: !lambda |-
+              return id(consigne_locale_clemence);
+
+  - id: appliquer_mode_local_clemence
+    parameters:
+      mode: string
+    then:
+      - lambda: |-
+          id(mode_local_clemence) = mode;
+
+      - if:
+          condition:
+            lambda: 'return mode == "off";'
+          then:
+            - lvgl.widget.hide:
+                id: cool_arc_clemence
+            - lvgl.widget.hide:
+                id: heat_arc_clemence
+            - lvgl.widget.update:
+                id: button_off_clemence
+                bg_color: 0x555555
+            - lvgl.widget.update:
+                id: button_clim_clemence
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_heat_clemence
+                bg_color: 0x202020
+            - lvgl.label.update:
+                id: consigne_label_clemence
+                text: "OFF"
+
+      - if:
+          condition:
+            lambda: 'return mode == "cool";'
+          then:
+            - lvgl.widget.show:
+                id: cool_arc_clemence
+            - lvgl.widget.hide:
+                id: heat_arc_clemence
+            - lvgl.widget.update:
+                id: button_off_clemence
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_clim_clemence
+                bg_color: 0x03A9F4
+            - lvgl.widget.update:
+                id: button_heat_clemence
+                bg_color: 0x202020
+            - lvgl.label.update:
+                id: consigne_label_clemence
+                text:
+                  format: "%.1f °C"
+                  args:
+                    - id(consigne_locale_clemence)
+
+      - if:
+          condition:
+            lambda: 'return mode == "heat";'
+          then:
+            - lvgl.widget.hide:
+                id: cool_arc_clemence
+            - lvgl.widget.show:
+                id: heat_arc_clemence
+            - lvgl.widget.update:
+                id: button_off_clemence
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_clim_clemence
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_heat_clemence
+                bg_color: 0xFF9800
+            - lvgl.label.update:
+                id: consigne_label_clemence
+                text:
+                  format: "%.1f °C"
+                  args:
+                    - id(consigne_locale_clemence)
+
+  # ---- ZONE 7 — Parents ----
+
+  - id: envoyer_consigne_ha_parents
+    mode: restart
+    then:
+      - delay: 2s
+      - homeassistant.action:
+          action: climate.set_temperature
+          data:
+            entity_id:climate.zone7
+            temperature: !lambda |-
+              return id(consigne_locale_parents);
+
+  - id: appliquer_mode_local_parents
+    parameters:
+      mode: string
+    then:
+      - lambda: |-
+          id(mode_local_parents) = mode;
+
+      - if:
+          condition:
+            lambda: 'return mode == "off";'
+          then:
+            - lvgl.widget.hide:
+                id: cool_arc_parents
+            - lvgl.widget.hide:
+                id: heat_arc_parents
+            - lvgl.widget.update:
+                id: button_off_parents
+                bg_color: 0x555555
+            - lvgl.widget.update:
+                id: button_clim_parents
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_heat_parents
+                bg_color: 0x202020
+            - lvgl.label.update:
+                id: consigne_label_parents
+                text: "OFF"
+
+      - if:
+          condition:
+            lambda: 'return mode == "cool";'
+          then:
+            - lvgl.widget.show:
+                id: cool_arc_parents
+            - lvgl.widget.hide:
+                id: heat_arc_parents
+            - lvgl.widget.update:
+                id: button_off_parents
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_clim_parents
+                bg_color: 0x03A9F4
+            - lvgl.widget.update:
+                id: button_heat_parents
+                bg_color: 0x202020
+            - lvgl.label.update:
+                id: consigne_label_parents
+                text:
+                  format: "%.1f °C"
+                  args:
+                    - id(consigne_locale_parents)
+
+      - if:
+          condition:
+            lambda: 'return mode == "heat";'
+          then:
+            - lvgl.widget.hide:
+                id: cool_arc_parents
+            - lvgl.widget.show:
+                id: heat_arc_parents
+            - lvgl.widget.update:
+                id: button_off_parents
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_clim_parents
+                bg_color: 0x202020
+            - lvgl.widget.update:
+                id: button_heat_parents
+                bg_color: 0xFF9800
+            - lvgl.label.update:
+                id: consigne_label_parents
+                text:
+                  format: "%.1f °C"
+                  args:
+                    - id(consigne_locale_parents)
+
+# ============================================================
+# LVGL
+# ============================================================
+
+lvgl:
+
+  id: thermostat_ui
+
+  displays:
+    - main_display
+
+  touchscreens:
+    - my_touchscreen
+
+  color_depth: 16
+
+  disp_bg_color: 0x000000
+
+  refresh_interval: 30ms
+
+  pages:
+
+    - id: page_maison
+
+      bg_color: 0x000000
+
+      on_swipe_left:
+        - lambda: |-
+            id(current_zone) = (id(current_zone) + 1) % 8;
+        - lvgl.page.next:
+            animation: MOVE_LEFT
+            time: 200ms
+
+      on_swipe_right:
+        - lambda: |-
+            id(current_zone) = (id(current_zone) + 7) % 8;
+        - lvgl.page.previous:
+            animation: MOVE_RIGHT
+            time: 200ms
+
+      widgets:
+
+        - label:
+            align: CENTER
+            x: 0
+            y: -90
+            text: "Maison"
+            text_font: font_zonename
+            text_color: 0xf9cb9c
+            text_align: CENTER
+
+        - arc:
+            id: temperature_arc_maison
+            align: CENTER
+            x: 0
+            y: 0
+            width: 310
+            height: 310
+            start_angle: 160
+            end_angle: 20
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 14
+            arc_rounded: true
+            arc_color: 0x3A3A3A
+            arc_opa: 100%
+            indicator:
+              arc_opa: 0%
+            knob:
+              bg_opa: 0%
+
+        - arc:
+            id: cool_arc_maison
+            align: CENTER
+            x: 0
+            y: 0
+            width: 310
+            height: 310
+            start_angle: 160
+            end_angle: 20
+            min_value: 0
+            max_value: 100
+            value: 0
+            adjustable: false
+            mode: REVERSE
+            arc_width: 14
+            arc_rounded: true
+            arc_color: 0x000000
+            arc_opa: 0%
+            indicator:
+              arc_color: 0x03A9F4
+              arc_opa: 100%
+              arc_width: 14
+              arc_rounded: true
+            knob:
+              bg_opa: 0%
+
+        - arc:
+            id: heat_arc_maison
+            align: CENTER
+            x: 0
+            y: 0
+            width: 310
+            height: 310
+            start_angle: 160
+            end_angle: 20
+            min_value: 0
+            max_value: 100
+            value: 0
+            adjustable: false
+            mode: NORMAL
+            arc_width: 14
+            arc_rounded: true
+            arc_color: 0x000000
+            arc_opa: 0%
+            indicator:
+              arc_color: 0xFF9800
+              arc_opa: 100%
+              arc_width: 14
+              arc_rounded: true
+            knob:
+              bg_opa: 0%
+            hidden: true
+
+        - obj:
+            id: temperature_dot_maison
+            align: CENTER
+            x: 0
+            y: 0
+            width: 18
+            height: 18
+            radius: 9
+            bg_color: 0xFFFFFF
+            bg_opa: 100%
+            border_width: 2
+            border_color: 0x101010
+            border_opa: 100%
+            clickable: false
+
+        - label:
+            id: consigne_label_maison
+            align: CENTER
+            x: 0
+            y: -25
+            text: "--.- °C"
+            text_font: font_target
+            text_color: 0xFFFFFF
+            text_align: CENTER
+
+        - label:
+            id: temperature_label_maison
+            align: CENTER
+            x: 0
+            y: 38
+            text: "--.- °C"
+            text_font: font_temperature
+            text_color: 0xA0A0A0
+            text_align: CENTER
+
+        - button:
+            id: button_off_maison
+            x: 68
+            y: 252
+            width: 64
+            height: 64
+            radius: 32
+            bg_color: 0x202020
+            border_width: 0
+            shadow_width: 0
+            clickable: true
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\U000F0425"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return !id(ignore_touch_reveil);'
+                  then:
+                    - script.execute:
+                        id: appliquer_mode_local_maison
+                        mode: "off"
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id: climate.zone0
+                          hvac_mode: "off"
+
+        - button:
+            id: button_clim_maison
+            x: 148
+            y: 252
+            width: 64
+            height: 64
+            radius: 32
+            bg_color: 0x202020
+            border_width: 0
+            shadow_width: 0
+            clickable: true
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\U000F0717"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return !id(ignore_touch_reveil);'
+                  then:
+                    - script.execute:
+                        id: appliquer_mode_local_maison
+                        mode: "cool"
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id: climate.zone0
+                          hvac_mode: "cool"
+
+        - button:
+            id: button_heat_maison
+            x: 228
+            y: 252
+            width: 64
+            height: 64
+            radius: 32
+            bg_color: 0x202020
+            border_width: 0
+            shadow_width: 0
+            clickable: true
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\U000F0238"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return !id(ignore_touch_reveil);'
+                  then:
+                    - script.execute:
+                        id: appliquer_mode_local_maison
+                        mode: "heat"
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id: climate.zone0
+                          hvac_mode: "heat"
+
+    - id: page_sejour
+
+      bg_color: 0x000000
+
+      on_swipe_left:
+        - lambda: |-
+            id(current_zone) = (id(current_zone) + 1) % 8;
+        - lvgl.page.next:
+            animation: MOVE_LEFT
+            time: 200ms
+
+      on_swipe_right:
+        - lambda: |-
+            id(current_zone) = (id(current_zone) + 7) % 8;
+        - lvgl.page.previous:
+            animation: MOVE_RIGHT
+            time: 200ms
+
+      widgets:
+
+        - label:
+            align: CENTER
+            x: 0
+            y: -90
+            text: "Sejour"
+            text_font: font_zonename
+            text_color: 0xf9cb9c
+            text_align: CENTER
+
+        - arc:
+            id: temperature_arc_sejour
+            align: CENTER
+            x: 0
+            y: 0
+            width: 310
+            height: 310
+            start_angle: 160
+            end_angle: 20
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 14
+            arc_rounded: true
+            arc_color: 0x3A3A3A
+            arc_opa: 100%
+            indicator:
+              arc_opa: 0%
+            knob:
+              bg_opa: 0%
+
+        - arc:
+            id: cool_arc_sejour
+            align: CENTER
+            x: 0
+            y: 0
+            width: 310
+            height: 310
+            start_angle: 160
+            end_angle: 20
+            min_value: 0
+            max_value: 100
+            value: 0
+            adjustable: false
+            mode: REVERSE
+            arc_width: 14
+            arc_rounded: true
+            arc_color: 0x000000
+            arc_opa: 0%
+            indicator:
+              arc_color: 0x03A9F4
+              arc_opa: 100%
+              arc_width: 14
+              arc_rounded: true
+            knob:
+              bg_opa: 0%
+
+        - arc:
+            id: heat_arc_sejour
+            align: CENTER
+            x: 0
+            y: 0
+            width: 310
+            height: 310
+            start_angle: 160
+            end_angle: 20
+            min_value: 0
+            max_value: 100
+            value: 0
+            adjustable: false
+            mode: NORMAL
+            arc_width: 14
+            arc_rounded: true
+            arc_color: 0x000000
+            arc_opa: 0%
+            indicator:
+              arc_color: 0xFF9800
+              arc_opa: 100%
+              arc_width: 14
+              arc_rounded: true
+            knob:
+              bg_opa: 0%
+            hidden: true
+
+        - obj:
+            id: temperature_dot_sejour
+            align: CENTER
+            x: 0
+            y: 0
+            width: 18
+            height: 18
+            radius: 9
+            bg_color: 0xFFFFFF
+            bg_opa: 100%
+            border_width: 2
+            border_color: 0x101010
+            border_opa: 100%
+            clickable: false
+
+        - label:
+            id: consigne_label_sejour
+            align: CENTER
+            x: 0
+            y: -25
+            text: "--.- °C"
+            text_font: font_target
+            text_color: 0xFFFFFF
+            text_align: CENTER
+
+        - label:
+            id: temperature_label_sejour
+            align: CENTER
+            x: 0
+            y: 38
+            text: "--.- °C"
+            text_font: font_temperature
+            text_color: 0xA0A0A0
+            text_align: CENTER
+
+        - button:
+            id: button_off_sejour
+            x: 68
+            y: 252
+            width: 64
+            height: 64
+            radius: 32
+            bg_color: 0x202020
+            border_width: 0
+            shadow_width: 0
+            clickable: true
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\U000F0425"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return !id(ignore_touch_reveil);'
+                  then:
+                    - script.execute:
+                        id: appliquer_mode_local_sejour
+                        mode: "off"
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id: climate.zone1
+                          hvac_mode: "off"
+
+        - button:
+            id: button_clim_sejour
+            x: 148
+            y: 252
+            width: 64
+            height: 64
+            radius: 32
+            bg_color: 0x202020
+            border_width: 0
+            shadow_width: 0
+            clickable: true
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\U000F0717"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return !id(ignore_touch_reveil);'
+                  then:
+                    - script.execute:
+                        id: appliquer_mode_local_sejour
+                        mode: "cool"
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id: climate.zone1
+                          hvac_mode: "cool"
+
+        - button:
+            id: button_heat_sejour
+            x: 228
+            y: 252
+            width: 64
+            height: 64
+            radius: 32
+            bg_color: 0x202020
+            border_width: 0
+            shadow_width: 0
+            clickable: true
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\U000F0238"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return !id(ignore_touch_reveil);'
+                  then:
+                    - script.execute:
+                        id: appliquer_mode_local_sejour
+                        mode: "heat"
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id: climate.zone1
+                          hvac_mode: "heat"
+
+    - id: page_cuisine
+
+      bg_color: 0x000000
+
+      on_swipe_left:
+        - lambda: |-
+            id(current_zone) = (id(current_zone) + 1) % 8;
+        - lvgl.page.next:
+            animation: MOVE_LEFT
+            time: 200ms
+
+      on_swipe_right:
+        - lambda: |-
+            id(current_zone) = (id(current_zone) + 7) % 8;
+        - lvgl.page.previous:
+            animation: MOVE_RIGHT
+            time: 200ms
+
+      widgets:
+
+        - label:
+            align: CENTER
+            x: 0
+            y: -90
+            text: "Cuisine"
+            text_font: font_zonename
+            text_color: 0xf9cb9c
+            text_align: CENTER
+
+        - arc:
+            id: temperature_arc_cuisine
+            align: CENTER
+            x: 0
+            y: 0
+            width: 310
+            height: 310
+            start_angle: 160
+            end_angle: 20
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 14
+            arc_rounded: true
+            arc_color: 0x3A3A3A
+            arc_opa: 100%
+            indicator:
+              arc_opa: 0%
+            knob:
+              bg_opa: 0%
+
+        - arc:
+            id: cool_arc_cuisine
+            align: CENTER
+            x: 0
+            y: 0
+            width: 310
+            height: 310
+            start_angle: 160
+            end_angle: 20
+            min_value: 0
+            max_value: 100
+            value: 0
+            adjustable: false
+            mode: REVERSE
+            arc_width: 14
+            arc_rounded: true
+            arc_color: 0x000000
+            arc_opa: 0%
+            indicator:
+              arc_color: 0x03A9F4
+              arc_opa: 100%
+              arc_width: 14
+              arc_rounded: true
+            knob:
+              bg_opa: 0%
+
+        - arc:
+            id: heat_arc_cuisine
+            align: CENTER
+            x: 0
+            y: 0
+            width: 310
+            height: 310
+            start_angle: 160
+            end_angle: 20
+            min_value: 0
+            max_value: 100
+            value: 0
+            adjustable: false
+            mode: NORMAL
+            arc_width: 14
+            arc_rounded: true
+            arc_color: 0x000000
+            arc_opa: 0%
+            indicator:
+              arc_color: 0xFF9800
+              arc_opa: 100%
+              arc_width: 14
+              arc_rounded: true
+            knob:
+              bg_opa: 0%
+            hidden: true
+
+        - obj:
+            id: temperature_dot_cuisine
+            align: CENTER
+            x: 0
+            y: 0
+            width: 18
+            height: 18
+            radius: 9
+            bg_color: 0xFFFFFF
+            bg_opa: 100%
+            border_width: 2
+            border_color: 0x101010
+            border_opa: 100%
+            clickable: false
+
+        - label:
+            id: consigne_label_cuisine
+            align: CENTER
+            x: 0
+            y: -25
+            text: "--.- °C"
+            text_font: font_target
+            text_color: 0xFFFFFF
+            text_align: CENTER
+
+        - label:
+            id: temperature_label_cuisine
+            align: CENTER
+            x: 0
+            y: 38
+            text: "--.- °C"
+            text_font: font_temperature
+            text_color: 0xA0A0A0
+            text_align: CENTER
+
+        - button:
+            id: button_off_cuisine
+            x: 68
+            y: 252
+            width: 64
+            height: 64
+            radius: 32
+            bg_color: 0x202020
+            border_width: 0
+            shadow_width: 0
+            clickable: true
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\U000F0425"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return !id(ignore_touch_reveil);'
+                  then:
+                    - script.execute:
+                        id: appliquer_mode_local_cuisine
+                        mode: "off"
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id: climate.zone2
+                          hvac_mode: "off"
+
+        - button:
+            id: button_clim_cuisine
+            x: 148
+            y: 252
+            width: 64
+            height: 64
+            radius: 32
+            bg_color: 0x202020
+            border_width: 0
+            shadow_width: 0
+            clickable: true
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\U000F0717"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return !id(ignore_touch_reveil);'
+                  then:
+                    - script.execute:
+                        id: appliquer_mode_local_cuisine
+                        mode: "cool"
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id: climate.zone2
+                          hvac_mode: "cool"
+
+        - button:
+            id: button_heat_cuisine
+            x: 228
+            y: 252
+            width: 64
+            height: 64
+            radius: 32
+            bg_color: 0x202020
+            border_width: 0
+            shadow_width: 0
+            clickable: true
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\U000F0238"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return !id(ignore_touch_reveil);'
+                  then:
+                    - script.execute:
+                        id: appliquer_mode_local_cuisine
+                        mode: "heat"
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id: climate.zone2
+                          hvac_mode: "heat"
+
+    - id: page_studio
+
+      bg_color: 0x000000
+
+      on_swipe_left:
+        - lambda: |-
+            id(current_zone) = (id(current_zone) + 1) % 8;
+        - lvgl.page.next:
+            animation: MOVE_LEFT
+            time: 200ms
+
+      on_swipe_right:
+        - lambda: |-
+            id(current_zone) = (id(current_zone) + 7) % 8;
+        - lvgl.page.previous:
+            animation: MOVE_RIGHT
+            time: 200ms
+
+      widgets:
+
+        - label:
+            align: CENTER
+            x: 0
+            y: -90
+            text: "Studio"
+            text_font: font_zonename
+            text_color: 0xf9cb9c
+            text_align: CENTER
+
+        - arc:
+            id: temperature_arc_studio
+            align: CENTER
+            x: 0
+            y: 0
+            width: 310
+            height: 310
+            start_angle: 160
+            end_angle: 20
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 14
+            arc_rounded: true
+            arc_color: 0x3A3A3A
+            arc_opa: 100%
+            indicator:
+              arc_opa: 0%
+            knob:
+              bg_opa: 0%
+
+        - arc:
+            id: cool_arc_studio
+            align: CENTER
+            x: 0
+            y: 0
+            width: 310
+            height: 310
+            start_angle: 160
+            end_angle: 20
+            min_value: 0
+            max_value: 100
+            value: 0
+            adjustable: false
+            mode: REVERSE
+            arc_width: 14
+            arc_rounded: true
+            arc_color: 0x000000
+            arc_opa: 0%
+            indicator:
+              arc_color: 0x03A9F4
+              arc_opa: 100%
+              arc_width: 14
+              arc_rounded: true
+            knob:
+              bg_opa: 0%
+
+        - arc:
+            id: heat_arc_studio
+            align: CENTER
+            x: 0
+            y: 0
+            width: 310
+            height: 310
+            start_angle: 160
+            end_angle: 20
+            min_value: 0
+            max_value: 100
+            value: 0
+            adjustable: false
+            mode: NORMAL
+            arc_width: 14
+            arc_rounded: true
+            arc_color: 0x000000
+            arc_opa: 0%
+            indicator:
+              arc_color: 0xFF9800
+              arc_opa: 100%
+              arc_width: 14
+              arc_rounded: true
+            knob:
+              bg_opa: 0%
+            hidden: true
+
+        - obj:
+            id: temperature_dot_studio
+            align: CENTER
+            x: 0
+            y: 0
+            width: 18
+            height: 18
+            radius: 9
+            bg_color: 0xFFFFFF
+            bg_opa: 100%
+            border_width: 2
+            border_color: 0x101010
+            border_opa: 100%
+            clickable: false
+
+        - label:
+            id: consigne_label_studio
+            align: CENTER
+            x: 0
+            y: -25
+            text: "--.- °C"
+            text_font: font_target
+            text_color: 0xFFFFFF
+            text_align: CENTER
+
+        - label:
+            id: temperature_label_studio
+            align: CENTER
+            x: 0
+            y: 38
+            text: "--.- °C"
+            text_font: font_temperature
+            text_color: 0xA0A0A0
+            text_align: CENTER
+
+        - button:
+            id: button_off_studio
+            x: 68
+            y: 252
+            width: 64
+            height: 64
+            radius: 32
+            bg_color: 0x202020
+            border_width: 0
+            shadow_width: 0
+            clickable: true
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\U000F0425"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return !id(ignore_touch_reveil);'
+                  then:
+                    - script.execute:
+                        id: appliquer_mode_local_studio
+                        mode: "off"
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id: climate.zone3
+                          hvac_mode: "off"
+
+        - button:
+            id: button_clim_studio
+            x: 148
+            y: 252
+            width: 64
+            height: 64
+            radius: 32
+            bg_color: 0x202020
+            border_width: 0
+            shadow_width: 0
+            clickable: true
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\U000F0717"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return !id(ignore_touch_reveil);'
+                  then:
+                    - script.execute:
+                        id: appliquer_mode_local_studio
+                        mode: "cool"
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id: climate.zone3
+                          hvac_mode: "cool"
+
+        - button:
+            id: button_heat_studio
+            x: 228
+            y: 252
+            width: 64
+            height: 64
+            radius: 32
+            bg_color: 0x202020
+            border_width: 0
+            shadow_width: 0
+            clickable: true
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\U000F0238"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return !id(ignore_touch_reveil);'
+                  then:
+                    - script.execute:
+                        id: appliquer_mode_local_studio
+                        mode: "heat"
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id: climate.zone3
+                          hvac_mode: "heat"
+
+    - id: page_sdb
+
+      bg_color: 0x000000
+
+      on_swipe_left:
+        - lambda: |-
+            id(current_zone) = (id(current_zone) + 1) % 8;
+        - lvgl.page.next:
+            animation: MOVE_LEFT
+            time: 200ms
+
+      on_swipe_right:
+        - lambda: |-
+            id(current_zone) = (id(current_zone) + 7) % 8;
+        - lvgl.page.previous:
+            animation: MOVE_RIGHT
+            time: 200ms
+
+      widgets:
+
+        - label:
+            align: CENTER
+            x: 0
+            y: -90
+            text: "Salle de Bain"
+            text_font: font_zonename
+            text_color: 0xf9cb9c
+            text_align: CENTER
+
+        - arc:
+            id: temperature_arc_sdb
+            align: CENTER
+            x: 0
+            y: 0
+            width: 310
+            height: 310
+            start_angle: 160
+            end_angle: 20
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 14
+            arc_rounded: true
+            arc_color: 0x3A3A3A
+            arc_opa: 100%
+            indicator:
+              arc_opa: 0%
+            knob:
+              bg_opa: 0%
+
+        - arc:
+            id: cool_arc_sdb
+            align: CENTER
+            x: 0
+            y: 0
+            width: 310
+            height: 310
+            start_angle: 160
+            end_angle: 20
+            min_value: 0
+            max_value: 100
+            value: 0
+            adjustable: false
+            mode: REVERSE
+            arc_width: 14
+            arc_rounded: true
+            arc_color: 0x000000
+            arc_opa: 0%
+            indicator:
+              arc_color: 0x03A9F4
+              arc_opa: 100%
+              arc_width: 14
+              arc_rounded: true
+            knob:
+              bg_opa: 0%
+
+        - arc:
+            id: heat_arc_sdb
+            align: CENTER
+            x: 0
+            y: 0
+            width: 310
+            height: 310
+            start_angle: 160
+            end_angle: 20
+            min_value: 0
+            max_value: 100
+            value: 0
+            adjustable: false
+            mode: NORMAL
+            arc_width: 14
+            arc_rounded: true
+            arc_color: 0x000000
+            arc_opa: 0%
+            indicator:
+              arc_color: 0xFF9800
+              arc_opa: 100%
+              arc_width: 14
+              arc_rounded: true
+            knob:
+              bg_opa: 0%
+            hidden: true
+
+        - obj:
+            id: temperature_dot_sdb
+            align: CENTER
+            x: 0
+            y: 0
+            width: 18
+            height: 18
+            radius: 9
+            bg_color: 0xFFFFFF
+            bg_opa: 100%
+            border_width: 2
+            border_color: 0x101010
+            border_opa: 100%
+            clickable: false
+
+        - label:
+            id: consigne_label_sdb
+            align: CENTER
+            x: 0
+            y: -25
+            text: "--.- °C"
+            text_font: font_target
+            text_color: 0xFFFFFF
+            text_align: CENTER
+
+        - label:
+            id: temperature_label_sdb
+            align: CENTER
+            x: 0
+            y: 38
+            text: "--.- °C"
+            text_font: font_temperature
+            text_color: 0xA0A0A0
+            text_align: CENTER
+
+        - button:
+            id: button_off_sdb
+            x: 68
+            y: 252
+            width: 64
+            height: 64
+            radius: 32
+            bg_color: 0x202020
+            border_width: 0
+            shadow_width: 0
+            clickable: true
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\U000F0425"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return !id(ignore_touch_reveil);'
+                  then:
+                    - script.execute:
+                        id: appliquer_mode_local_sdb
+                        mode: "off"
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id: climate.zone4
+                          hvac_mode: "off"
+
+        - button:
+            id: button_clim_sdb
+            x: 148
+            y: 252
+            width: 64
+            height: 64
+            radius: 32
+            bg_color: 0x202020
+            border_width: 0
+            shadow_width: 0
+            clickable: true
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\U000F0717"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return !id(ignore_touch_reveil);'
+                  then:
+                    - script.execute:
+                        id: appliquer_mode_local_sdb
+                        mode: "cool"
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id: climate.zone4
+                          hvac_mode: "cool"
+
+        - button:
+            id: button_heat_sdb
+            x: 228
+            y: 252
+            width: 64
+            height: 64
+            radius: 32
+            bg_color: 0x202020
+            border_width: 0
+            shadow_width: 0
+            clickable: true
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\U000F0238"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return !id(ignore_touch_reveil);'
+                  then:
+                    - script.execute:
+                        id: appliquer_mode_local_sdb
+                        mode: "heat"
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id: climate.zone4
+                          hvac_mode: "heat"
+
+    - id: page_enfants
+
+      bg_color: 0x000000
+
+      on_swipe_left:
+        - lambda: |-
+            id(current_zone) = (id(current_zone) + 1) % 8;
+        - lvgl.page.next:
+            animation: MOVE_LEFT
+            time: 200ms
+
+      on_swipe_right:
+        - lambda: |-
+            id(current_zone) = (id(current_zone) + 7) % 8;
+        - lvgl.page.previous:
+            animation: MOVE_RIGHT
+            time: 200ms
+
+      widgets:
+
+        - label:
+            align: CENTER
+            x: 0
+            y: -90
+            text: "Enfants"
+            text_font: font_zonename
+            text_color: 0xf9cb9c
+            text_align: CENTER
+
+        - arc:
+            id: temperature_arc_enfants
+            align: CENTER
+            x: 0
+            y: 0
+            width: 310
+            height: 310
+            start_angle: 160
+            end_angle: 20
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 14
+            arc_rounded: true
+            arc_color: 0x3A3A3A
+            arc_opa: 100%
+            indicator:
+              arc_opa: 0%
+            knob:
+              bg_opa: 0%
+
+        - arc:
+            id: cool_arc_enfants
+            align: CENTER
+            x: 0
+            y: 0
+            width: 310
+            height: 310
+            start_angle: 160
+            end_angle: 20
+            min_value: 0
+            max_value: 100
+            value: 0
+            adjustable: false
+            mode: REVERSE
+            arc_width: 14
+            arc_rounded: true
+            arc_color: 0x000000
+            arc_opa: 0%
+            indicator:
+              arc_color: 0x03A9F4
+              arc_opa: 100%
+              arc_width: 14
+              arc_rounded: true
+            knob:
+              bg_opa: 0%
+
+        - arc:
+            id: heat_arc_enfants
+            align: CENTER
+            x: 0
+            y: 0
+            width: 310
+            height: 310
+            start_angle: 160
+            end_angle: 20
+            min_value: 0
+            max_value: 100
+            value: 0
+            adjustable: false
+            mode: NORMAL
+            arc_width: 14
+            arc_rounded: true
+            arc_color: 0x000000
+            arc_opa: 0%
+            indicator:
+              arc_color: 0xFF9800
+              arc_opa: 100%
+              arc_width: 14
+              arc_rounded: true
+            knob:
+              bg_opa: 0%
+            hidden: true
+
+        - obj:
+            id: temperature_dot_enfants
+            align: CENTER
+            x: 0
+            y: 0
+            width: 18
+            height: 18
+            radius: 9
+            bg_color: 0xFFFFFF
+            bg_opa: 100%
+            border_width: 2
+            border_color: 0x101010
+            border_opa: 100%
+            clickable: false
+
+        - label:
+            id: consigne_label_enfants
+            align: CENTER
+            x: 0
+            y: -25
+            text: "--.- °C"
+            text_font: font_target
+            text_color: 0xFFFFFF
+            text_align: CENTER
+
+        - label:
+            id: temperature_label_enfants
+            align: CENTER
+            x: 0
+            y: 38
+            text: "--.- °C"
+            text_font: font_temperature
+            text_color: 0xA0A0A0
+            text_align: CENTER
+
+        - button:
+            id: button_off_enfants
+            x: 68
+            y: 252
+            width: 64
+            height: 64
+            radius: 32
+            bg_color: 0x202020
+            border_width: 0
+            shadow_width: 0
+            clickable: true
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\U000F0425"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return !id(ignore_touch_reveil);'
+                  then:
+                    - script.execute:
+                        id: appliquer_mode_local_enfants
+                        mode: "off"
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id: climate.zone5
+                          hvac_mode: "off"
+
+        - button:
+            id: button_clim_enfants
+            x: 148
+            y: 252
+            width: 64
+            height: 64
+            radius: 32
+            bg_color: 0x202020
+            border_width: 0
+            shadow_width: 0
+            clickable: true
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\U000F0717"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return !id(ignore_touch_reveil);'
+                  then:
+                    - script.execute:
+                        id: appliquer_mode_local_enfants
+                        mode: "cool"
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id: climate.zone5
+                          hvac_mode: "cool"
+
+        - button:
+            id: button_heat_enfants
+            x: 228
+            y: 252
+            width: 64
+            height: 64
+            radius: 32
+            bg_color: 0x202020
+            border_width: 0
+            shadow_width: 0
+            clickable: true
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\U000F0238"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return !id(ignore_touch_reveil);'
+                  then:
+                    - script.execute:
+                        id: appliquer_mode_local_enfants
+                        mode: "heat"
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id: climate.zone5
+                          hvac_mode: "heat"
+
+    - id: page_clemence
+
+      bg_color: 0x000000
+
+      on_swipe_left:
+        - lambda: |-
+            id(current_zone) = (id(current_zone) + 1) % 8;
+        - lvgl.page.next:
+            animation: MOVE_LEFT
+            time: 200ms
+
+      on_swipe_right:
+        - lambda: |-
+            id(current_zone) = (id(current_zone) + 7) % 8;
+        - lvgl.page.previous:
+            animation: MOVE_RIGHT
+            time: 200ms
+
+      widgets:
+
+        - label:
+            align: CENTER
+            x: 0
+            y: -90
+            text: "Clemence"
+            text_font: font_zonename
+            text_color: 0xf9cb9c
+            text_align: CENTER
+
+        - arc:
+            id: temperature_arc_clemence
+            align: CENTER
+            x: 0
+            y: 0
+            width: 310
+            height: 310
+            start_angle: 160
+            end_angle: 20
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 14
+            arc_rounded: true
+            arc_color: 0x3A3A3A
+            arc_opa: 100%
+            indicator:
+              arc_opa: 0%
+            knob:
+              bg_opa: 0%
+
+        - arc:
+            id: cool_arc_clemence
+            align: CENTER
+            x: 0
+            y: 0
+            width: 310
+            height: 310
+            start_angle: 160
+            end_angle: 20
+            min_value: 0
+            max_value: 100
+            value: 0
+            adjustable: false
+            mode: REVERSE
+            arc_width: 14
+            arc_rounded: true
+            arc_color: 0x000000
+            arc_opa: 0%
+            indicator:
+              arc_color: 0x03A9F4
+              arc_opa: 100%
+              arc_width: 14
+              arc_rounded: true
+            knob:
+              bg_opa: 0%
+
+        - arc:
+            id: heat_arc_clemence
+            align: CENTER
+            x: 0
+            y: 0
+            width: 310
+            height: 310
+            start_angle: 160
+            end_angle: 20
+            min_value: 0
+            max_value: 100
+            value: 0
+            adjustable: false
+            mode: NORMAL
+            arc_width: 14
+            arc_rounded: true
+            arc_color: 0x000000
+            arc_opa: 0%
+            indicator:
+              arc_color: 0xFF9800
+              arc_opa: 100%
+              arc_width: 14
+              arc_rounded: true
+            knob:
+              bg_opa: 0%
+            hidden: true
+
+        - obj:
+            id: temperature_dot_clemence
+            align: CENTER
+            x: 0
+            y: 0
+            width: 18
+            height: 18
+            radius: 9
+            bg_color: 0xFFFFFF
+            bg_opa: 100%
+            border_width: 2
+            border_color: 0x101010
+            border_opa: 100%
+            clickable: false
+
+        - label:
+            id: consigne_label_clemence
+            align: CENTER
+            x: 0
+            y: -25
+            text: "--.- °C"
+            text_font: font_target
+            text_color: 0xFFFFFF
+            text_align: CENTER
+
+        - label:
+            id: temperature_label_clemence
+            align: CENTER
+            x: 0
+            y: 38
+            text: "--.- °C"
+            text_font: font_temperature
+            text_color: 0xA0A0A0
+            text_align: CENTER
+
+        - button:
+            id: button_off_clemence
+            x: 68
+            y: 252
+            width: 64
+            height: 64
+            radius: 32
+            bg_color: 0x202020
+            border_width: 0
+            shadow_width: 0
+            clickable: true
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\U000F0425"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return !id(ignore_touch_reveil);'
+                  then:
+                    - script.execute:
+                        id: appliquer_mode_local_clemence
+                        mode: "off"
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id: climate.chambre_clemence_clim_chambre_clemence_climatisation
+                          hvac_mode: "off"
+
+        - button:
+            id: button_clim_clemence
+            x: 148
+            y: 252
+            width: 64
+            height: 64
+            radius: 32
+            bg_color: 0x202020
+            border_width: 0
+            shadow_width: 0
+            clickable: true
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\U000F0717"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return !id(ignore_touch_reveil);'
+                  then:
+                    - script.execute:
+                        id: appliquer_mode_local_clemence
+                        mode: "cool"
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id: climate.chambre_clemence_clim_chambre_clemence_climatisation
+                          hvac_mode: "cool"
+
+        - button:
+            id: button_heat_clemence
+            x: 228
+            y: 252
+            width: 64
+            height: 64
+            radius: 32
+            bg_color: 0x202020
+            border_width: 0
+            shadow_width: 0
+            clickable: true
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\U000F0238"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return !id(ignore_touch_reveil);'
+                  then:
+                    - script.execute:
+                        id: appliquer_mode_local_clemence
+                        mode: "heat"
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id: climate.chambre_clemence_clim_chambre_clemence_climatisation
+                          hvac_mode: "heat"
+
+    - id: page_parents
+
+      bg_color: 0x000000
+
+      on_swipe_left:
+        - lambda: |-
+            id(current_zone) = (id(current_zone) + 1) % 8;
+        - lvgl.page.next:
+            animation: MOVE_LEFT
+            time: 200ms
+
+      on_swipe_right:
+        - lambda: |-
+            id(current_zone) = (id(current_zone) + 7) % 8;
+        - lvgl.page.previous:
+            animation: MOVE_RIGHT
+            time: 200ms
+
+      widgets:
+
+        - label:
+            align: CENTER
+            x: 0
+            y: -90
+            text: "Parents"
+            text_font: font_zonename
+            text_color: 0xf9cb9c
+            text_align: CENTER
+
+        - arc:
+            id: temperature_arc_parents
+            align: CENTER
+            x: 0
+            y: 0
+            width: 310
+            height: 310
+            start_angle: 160
+            end_angle: 20
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 14
+            arc_rounded: true
+            arc_color: 0x3A3A3A
+            arc_opa: 100%
+            indicator:
+              arc_opa: 0%
+            knob:
+              bg_opa: 0%
+
+        - arc:
+            id: cool_arc_parents
+            align: CENTER
+            x: 0
+            y: 0
+            width: 310
+            height: 310
+            start_angle: 160
+            end_angle: 20
+            min_value: 0
+            max_value: 100
+            value: 0
+            adjustable: false
+            mode: REVERSE
+            arc_width: 14
+            arc_rounded: true
+            arc_color: 0x000000
+            arc_opa: 0%
+            indicator:
+              arc_color: 0x03A9F4
+              arc_opa: 100%
+              arc_width: 14
+              arc_rounded: true
+            knob:
+              bg_opa: 0%
+
+        - arc:
+            id: heat_arc_parents
+            align: CENTER
+            x: 0
+            y: 0
+            width: 310
+            height: 310
+            start_angle: 160
+            end_angle: 20
+            min_value: 0
+            max_value: 100
+            value: 0
+            adjustable: false
+            mode: NORMAL
+            arc_width: 14
+            arc_rounded: true
+            arc_color: 0x000000
+            arc_opa: 0%
+            indicator:
+              arc_color: 0xFF9800
+              arc_opa: 100%
+              arc_width: 14
+              arc_rounded: true
+            knob:
+              bg_opa: 0%
+            hidden: true
+
+        - obj:
+            id: temperature_dot_parents
+            align: CENTER
+            x: 0
+            y: 0
+            width: 18
+            height: 18
+            radius: 9
+            bg_color: 0xFFFFFF
+            bg_opa: 100%
+            border_width: 2
+            border_color: 0x101010
+            border_opa: 100%
+            clickable: false
+
+        - label:
+            id: consigne_label_parents
+            align: CENTER
+            x: 0
+            y: -25
+            text: "--.- °C"
+            text_font: font_target
+            text_color: 0xFFFFFF
+            text_align: CENTER
+
+        - label:
+            id: temperature_label_parents
+            align: CENTER
+            x: 0
+            y: 38
+            text: "--.- °C"
+            text_font: font_temperature
+            text_color: 0xA0A0A0
+            text_align: CENTER
+
+        - button:
+            id: button_off_parents
+            x: 68
+            y: 252
+            width: 64
+            height: 64
+            radius: 32
+            bg_color: 0x202020
+            border_width: 0
+            shadow_width: 0
+            clickable: true
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\U000F0425"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return !id(ignore_touch_reveil);'
+                  then:
+                    - script.execute:
+                        id: appliquer_mode_local_parents
+                        mode: "off"
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id:climate.zone7
+                          hvac_mode: "off"
+
+        - button:
+            id: button_clim_parents
+            x: 148
+            y: 252
+            width: 64
+            height: 64
+            radius: 32
+            bg_color: 0x202020
+            border_width: 0
+            shadow_width: 0
+            clickable: true
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\U000F0717"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return !id(ignore_touch_reveil);'
+                  then:
+                    - script.execute:
+                        id: appliquer_mode_local_parents
+                        mode: "cool"
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id:climate.zone7
+                          hvac_mode: "cool"
+
+        - button:
+            id: button_heat_parents
+            x: 228
+            y: 252
+            width: 64
+            height: 64
+            radius: 32
+            bg_color: 0x202020
+            border_width: 0
+            shadow_width: 0
+            clickable: true
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\U000F0238"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return !id(ignore_touch_reveil);'
+                  then:
+                    - script.execute:
+                        id: appliquer_mode_local_parents
+                        mode: "heat"
+                    - homeassistant.action:
+                        action: climate.set_hvac_mode
+                        data:
+                          entity_id:climate.zone7
+                          hvac_mode: "heat"

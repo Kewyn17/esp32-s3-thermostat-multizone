@@ -1,0 +1,22 @@
+alias: Thermostat - Veille
+description: Éteint le rétroéclairage après 30 secondes puis deep sleep après 3 minutes
+trigger:
+  - platform: state
+    entity_id:
+      - sensor.thermostat_knob  # Remplacez par l'entité de votre molette (ex: sensor.multi_zone_thermostat_rotary_knob)
+  - platform: state
+    entity_id:
+      - light.thermostat_backlight  # Remplacez par l'entité du rétroéclairage (ex: light.multi_zone_thermostat_backlight)
+action:
+  - delay: "00:00:30"  # 30 secondes
+  - service: light.turn_off
+    target:
+      entity_id: light.thermostat_backlight
+  - delay: "00:02:30"  # 3 minutes au total (30s + 2m30)
+  - condition: numeric_state
+    entity_id: sensor.thermostat_battery_voltage  # Remplacez par l'entité de tension batterie (ex: sensor.multi_zone_thermostat_battery_voltage)
+    below: 4.2
+  - service: switch.turn_on
+    target:
+      entity_id: switch.thermostat_deep_sleep  # Remplacez par l'entité du deep sleep (ex: switch.multi_zone_thermostat_deep_sleep)
+mode: restart
