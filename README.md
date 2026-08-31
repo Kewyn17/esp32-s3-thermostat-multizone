@@ -62,3 +62,4 @@ Idéal pour contrôler la température de chaque pièce de votre maison avec une
    - Remplacez `sensor.zone_0_temperature` par votre capteur de température (ex: `sensor.temperature_salon`).
    - Répétez pour les **8 zones**.
 3. **Créez script et automation de veille / timer
+4. **Ajoutez le sensor à votre fichier configuration.yaml
