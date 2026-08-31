@@ -9,6 +9,8 @@
 
 ## 🇫🇷 Thermostat Multi-Zones pour Waveshare ESP32-S3 Knob Touch LCD 1.8"
 
+<img src="UI.jpg" alt="UI" width="500">
+
 Un thermostat **multi-zones** (jusqu'à 8 zones) pour le **Waveshare ESP32-S3 Knob Touch LCD 1.8"**, intégré avec **Home Assistant** via **ESPHome**.
 Idéal pour contrôler la température de chaque pièce de votre maison avec une interface tactile intuitive.
 
@@ -62,5 +64,5 @@ Idéal pour contrôler la température de chaque pièce de votre maison avec une
    - Répétez pour les **8 zones**.
    - flasher les ESP
    - Ajouter le thermostat à Home Assistant via l'intégration ESPHome
-3. **Créez script et automation de veille / timer
-4. **Ajoutez le sensor à votre fichier configuration.yaml
+3. **Créez script et automation** de veille / timer
+4. **Ajoutez le sensor** à votre fichier configuration.yaml
