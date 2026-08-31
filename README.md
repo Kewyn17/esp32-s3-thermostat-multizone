@@ -14,13 +14,21 @@ Un thermostat **multi-zones** (jusqu'à 8 zones) pour le **Waveshare ESP32-S3 Kn
 Idéal pour contrôler la température de chaque pièce de votre maison avec une interface tactile intuitive.
 
 🔹 **Fonctionnalités clés** :
+
 ✅ **8 zones indépendantes** (navigables par swipe gauche/droite en boucle).
+
 ✅ **Contrôle par molette rotative** (réglage précis de la consigne).
+
 ✅ **Veille automatique** :
    - Extinction du rétroéclairage après **30 secondes d'inactivité**.
-   - Passage en **veille profonde** après **3 minutes** (si tension batterie < 4.2V).
+   - Passage en **veille profonde** après **3 minutes**
+
 ✅ **Affichage clair** : Température actuelle, consigne, et mode (Chauffage/Climatisation/Off).
+
 ✅ **Compatibilité** : Fonctionne avec n'importe quel climatiseur ou chauffage connecté à Home Assistant.
+
+✅ Timer 15 - 240min (swipe haut/bas)
+
 ✅ **Économie d'énergie** : Utilisation du **deep sleep** pour prolonger l'autonomie (jusqu'à plusieurs mois avec une batterie LiPo).
 
 🔹 **Matériel requis** :
@@ -36,15 +44,15 @@ Idéal pour contrôler la température de chaque pièce de votre maison avec une
 - **Home Assistant** (pour l'intégration des capteurs et climatiseurs).
 
 🔹 **Crédits** :
-- Développement initial avec l'aide de **ChatGPT** et **Vibe (Mistral AI)**.
-- Inspiration pour l'optimisation de la veille : [svwhisper/lyngdorf-secondary-sleep](https://github.com/svwhisper/lyngdorf-secondary-sleep) (pour flasher un second ESP et gagner en autonomie).
+- Développement initial avec l'aide de **ChatGPT**, **Claude**  et **Vibe (Mistral AI)**
+- optimisation de la veille : [svwhisper/lyngdorf-secondary-sleep](https://github.com/svwhisper/lyngdorf-secondary-sleep) (pour flasher le second ESP et gagner en autonomie).
 
 ---
 
 ### 🛠️ Installation
 
 #### 1️⃣ Prérequis
-- Un **dépôt ESPHome** configuré dans Home Assistant.
+- **ESPHome** configuré dans Home Assistant.
 - Les **entités Home Assistant** pour chaque zone (ex: `climate.salon`, `sensor.temperature_chambre`).
 
 #### 2️⃣ Configuration
@@ -53,7 +61,4 @@ Idéal pour contrôler la température de chaque pièce de votre maison avec une
    - Remplacez `climate.zone_0` par votre entité climatiseur (ex: `climate.salon`).
    - Remplacez `sensor.zone_0_temperature` par votre capteur de température (ex: `sensor.temperature_salon`).
    - Répétez pour les **8 zones**.
-3. **Créez un fichier `secrets.yaml`** dans le même dossier :
-   ```yaml
-   wifi_ssid: "VOTRE_SSID_WIFI"
-   wifi_password: "VOTRE_MOT_DE_PASSE"# esp32-s3-thermostat-multizone
+3. **Créez script et automation de veille / timer
