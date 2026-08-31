@@ -1,0 +1,17 @@
+template:
+
+- trigger:
+    - trigger: time_pattern
+      seconds: "/15"
+    - trigger: state
+      entity_id: timer.pac_maison
+  sensor:
+      - name: "PAC Maison Minuterie Restante"
+        unique_id: pac_maison_minuterie_restante
+        unit_of_measurement: min
+        state: >
+          {% if states('timer.pac_maison') == 'active' %}
+            {{ ((as_timestamp(state_attr('timer.pac_maison','finishes_at')) - as_timestamp(now())) / 60) | round(0, 'ceil') }}
+          {% else %}
+            0
+          {% endif %}
