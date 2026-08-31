@@ -1,0 +1,21 @@
+alias: stop script timer PAC
+description: ''
+triggers: []
+conditions: []
+actions:
+  - action: script.turn_off
+    metadata: {}
+    target:
+      entity_id: script.timer_pac_maison
+    data: {}
+  - action: climate.turn_off
+    metadata: {}
+    target:
+      entity_id: climate.maison
+    data: {}
+  - action: timer.cancel
+    metadata: {}
+    target:
+      entity_id: timer.pac_maison
+    data: {}
+mode: single
