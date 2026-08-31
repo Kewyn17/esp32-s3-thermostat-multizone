@@ -4,7 +4,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Device: Waveshare ESP32-S3 Knob](https://img.shields.io/badge/Device-Waveshare%20ESP32--S3%20Knob-orange)](https://www.waveshare.com/esp32-s3-knob-touch-lcd-1.8.htm?sku=34875)
 
-**Languages:** [Français](#-thermostat-multi-zones-pour-waveshare-esp32-s3-knob-touch-lcd-18)   [English](#-multi-zone-thermostat-for-waveshare-esp32-s3-knob-touch-lcd-18)
 
 ---
 
@@ -58,8 +57,10 @@ Idéal pour contrôler la température de chaque pièce de votre maison avec une
 #### 2️⃣ Configuration
 1. **Téléchargez** le fichier [`thermostat-multizone.yaml`](thermostat-multizone.yaml).
 2. **Personnalisez** les entités dans le YAML :
-   - Remplacez `climate.zone_0` par votre entité climatiseur (ex: `climate.salon`).
-   - Remplacez `sensor.zone_0_temperature` par votre capteur de température (ex: `sensor.temperature_salon`).
+   - Remplacez `climate.zone0` par votre entité climatiseur (ex: `climate.salon`).
+   - Remplacez `sensor.zone0` par votre capteur de température (ex: `sensor.temperature_salon`).
    - Répétez pour les **8 zones**.
+   - flasher les ESP
+   - Ajouter le thermostat à Home Assistant via l'intégration ESPHome
 3. **Créez script et automation de veille / timer
 4. **Ajoutez le sensor à votre fichier configuration.yaml
