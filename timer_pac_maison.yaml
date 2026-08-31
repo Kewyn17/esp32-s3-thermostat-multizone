@@ -1,0 +1,55 @@
+alias: Timer PAC maison
+fields:
+  mode:
+    name: Mode
+    required: true
+    selector:
+      select:
+        options:
+          - heat
+          - cool
+        mode: list
+  duree:
+    name: Durée (min)
+    required: true
+    selector:
+      number:
+        min: 15
+        max: 240
+        step: 15
+        unit_of_measurement: min
+        mode: slider
+sequence:
+  - action: timer.start
+    target:
+      entity_id: timer.pac_maison
+    data:
+      duration: '{{ (duree | int) * 60 }}'
+  - action: climate.turn_on
+    target:
+      entity_id: climate.maison
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: '{{ mode == ''heat'' }}'
+        sequence:
+          - action: climate.set_hvac_mode
+            target:
+              entity_id: climate.maison
+            data:
+              hvac_mode: heat
+      - conditions:
+          - condition: template
+            value_template: '{{ mode == ''cool'' }}'
+        sequence:
+          - action: climate.set_hvac_mode
+            target:
+              entity_id: climate.maison
+            data:
+              hvac_mode: cool
+  - delay:
+      minutes: '{{ duree | int }}'
+  - action: climate.turn_off
+    target:
+      entity_id: climate.maison
+mode: single
