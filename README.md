@@ -46,7 +46,7 @@ Idéal pour contrôler la température de chaque pièce de votre maison avec une
 
 🔹 **Crédits** :
 - Développement initial avec l'aide de **ChatGPT**, **Claude**  et **Vibe (Mistral AI)**
-- optimisation de la veille : [svwhisper/lyngdorf-secondary-sleep](https://github.com/svwhisper/lyngdorf-secondary-sleep) (pour flasher le second ESP et gagner en autonomie).
+- optimisation de la veille : flasher le second esp (en inversant le câble USB-C ) avec le code arduino fournis
 
 ---
 
