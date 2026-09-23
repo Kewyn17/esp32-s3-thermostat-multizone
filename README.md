@@ -23,6 +23,7 @@ Idéal pour contrôler la température de chaque pièce de votre maison avec une
 ✅ **Veille automatique** :
    - Extinction du rétroéclairage après **30 secondes d'inactivité**.
    - Passage en **veille profonde** après **3 minutes**
+   - optimisation de la veille : flasher le second esp (en inversant le câble USB-C ) avec le code arduino fournis pour le mettre en deepsleep dès le démarrage, l'esp n'est pas utilisé dans ce projet.
 
 ✅ **Affichage clair** : Température actuelle, consigne, et mode (Chauffage/Climatisation/Off).
 
@@ -46,7 +47,6 @@ Idéal pour contrôler la température de chaque pièce de votre maison avec une
 
 🔹 **Crédits** :
 - Développement initial avec l'aide de **ChatGPT**, **Claude**  et **Vibe (Mistral AI)**
-- optimisation de la veille : flasher le second esp (en inversant le câble USB-C ) avec le code arduino fournis
 
 ---
 
