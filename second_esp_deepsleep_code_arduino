@@ -1,0 +1,13 @@
+#include "esp_sleep.h"
+
+void setup() {
+  Serial.begin(115200);
+  Serial.println("ESP32 en mode Deep Sleep permanent.");
+
+  // Passer en Deep Sleep immédiatement
+  esp_deep_sleep_start();
+}
+
+void loop() {
+  // Ne sera jamais exécuté
+}
